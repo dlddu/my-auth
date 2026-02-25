@@ -4,8 +4,10 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"os"
 
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/sqlite"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "modernc.org/sqlite" // register "sqlite" driver
 )
 
@@ -52,16 +54,25 @@ func Open(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Migrate executes the SQL migration file at migrationPath against db.
-// It creates the six required tables if they do not already exist.
-func Migrate(db *sql.DB, migrationPath string) error {
-	data, err := os.ReadFile(migrationPath)
+// Migrate applies all pending migrations from migrationsDir against db
+// using golang-migrate.
+func Migrate(db *sql.DB, migrationsDir string) error {
+	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
 	if err != nil {
-		return fmt.Errorf("database: read migration file %q: %w", migrationPath, err)
+		return fmt.Errorf("database: create migrate driver: %w", err)
 	}
 
-	if _, err := db.Exec(string(data)); err != nil {
-		return fmt.Errorf("database: execute migration %q: %w", migrationPath, err)
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://"+migrationsDir,
+		"sqlite",
+		driver,
+	)
+	if err != nil {
+		return fmt.Errorf("database: create migrate instance: %w", err)
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("database: run migrations: %w", err)
 	}
 
 	return nil
