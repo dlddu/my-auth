@@ -1,0 +1,10 @@
+issuer: "https://auth.example.com"
+port: 8080
+
+owner:
+  username: "admin"
+  # bcrypt hash of the initial owner password — replace before production use
+  password_hash: "$2a$12$CHANGEME_REPLACE_WITH_REAL_BCRYPT_HASH"
+
+# Path to the RSA private key PEM file used for JWT signing (JWKS endpoint)
+jwt_key_path: "/keys/private.pem"
