@@ -137,7 +137,7 @@ func TestLoad_ReturnsError_WhenFileNotFound(t *testing.T) {
 
 func TestLoad_ReturnsError_WhenYAMLInvalid(t *testing.T) {
 	// Arrange
-	path := writeTempConfig(t, ":::invalid yaml:::")
+	path := writeTempConfig(t, "key: [unclosed")
 
 	// Act
 	_, err := config.Load(path)
