@@ -20,15 +20,15 @@ func tempDBPath(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "test.db")
 }
 
-// migrationPath returns the absolute path to the project migration file.
-func migrationPath(t *testing.T) string {
+// migrationsDir returns the absolute path to the project migrations directory.
+func migrationsDir(t *testing.T) string {
 	t.Helper()
 	// Walk up from the test binary's working directory to find migrations/
 	// In standard `go test ./...` the cwd is the package directory.
-	path := filepath.Join("..", "..", "migrations", "001_init.sql")
+	path := filepath.Join("..", "..", "migrations")
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		t.Fatalf("migrationPath: %v", err)
+		t.Fatalf("migrationsDir: %v", err)
 	}
 	return abs
 }
@@ -163,7 +163,7 @@ func TestMigrate_CreatesAllRequiredTables(t *testing.T) {
 	defer db.Close()
 
 	// Act
-	if err := database.Migrate(db, migrationPath(t)); err != nil {
+	if err := database.Migrate(db, migrationsDir(t)); err != nil {
 		t.Fatalf("Migrate() returned unexpected error: %v", err)
 	}
 
@@ -184,13 +184,13 @@ func TestMigrate_IsIdempotent(t *testing.T) {
 	}
 	defer db.Close()
 
-	migPath := migrationPath(t)
+	migDir := migrationsDir(t)
 
 	// Act — run migration twice; second run must not fail
-	if err := database.Migrate(db, migPath); err != nil {
+	if err := database.Migrate(db, migDir); err != nil {
 		t.Fatalf("Migrate() first run: %v", err)
 	}
-	if err := database.Migrate(db, migPath); err != nil {
+	if err := database.Migrate(db, migDir); err != nil {
 		t.Errorf("Migrate() second run (idempotency): %v", err)
 	}
 }
@@ -203,7 +203,7 @@ func TestMigrate_ClientsTable_HasExpectedColumns(t *testing.T) {
 		t.Fatalf("Open(): %v", err)
 	}
 	defer db.Close()
-	if err := database.Migrate(db, migrationPath(t)); err != nil {
+	if err := database.Migrate(db, migrationsDir(t)); err != nil {
 		t.Fatalf("Migrate(): %v", err)
 	}
 
@@ -240,7 +240,7 @@ func TestMigrate_ClientsTable_HasExpectedColumns(t *testing.T) {
 // Migrate — error cases
 // ---------------------------------------------------------------------------
 
-func TestMigrate_ReturnsError_WhenMigrationFileNotFound(t *testing.T) {
+func TestMigrate_ReturnsError_WhenMigrationsDirNotFound(t *testing.T) {
 	// Arrange
 	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_foreign_keys=ON", tempDBPath(t))
 	db, err := database.Open(dsn)
@@ -250,18 +250,18 @@ func TestMigrate_ReturnsError_WhenMigrationFileNotFound(t *testing.T) {
 	defer db.Close()
 
 	// Act
-	err = database.Migrate(db, "/nonexistent/migration.sql")
+	err = database.Migrate(db, "/nonexistent/migrations")
 
 	// Assert
 	if err == nil {
-		t.Error("Migrate() expected error for missing migration file, got nil")
+		t.Error("Migrate() expected error for missing migrations directory, got nil")
 	}
 }
 
 func TestMigrate_ReturnsError_WhenSQLInvalid(t *testing.T) {
-	// Arrange
+	// Arrange — create a temp dir with an invalid migration file
 	dir := t.TempDir()
-	badSQL := filepath.Join(dir, "bad.sql")
+	badSQL := filepath.Join(dir, "000001_bad.up.sql")
 	if err := os.WriteFile(badSQL, []byte("THIS IS NOT SQL;;;"), 0600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestMigrate_ReturnsError_WhenSQLInvalid(t *testing.T) {
 	defer db.Close()
 
 	// Act
-	err = database.Migrate(db, badSQL)
+	err = database.Migrate(db, dir)
 
 	// Assert
 	if err == nil {
