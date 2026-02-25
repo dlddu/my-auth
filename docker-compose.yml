@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  auth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist the SQLite database file across container restarts.
+      - sqlite_data:/data
+      # Mount RSA key files generated on the host by the keygen utility.
+      - ./keys:/keys:ro
+      # Allow overriding config.yaml without rebuilding the image.
+      - ./config.yaml:/config.yaml:ro
+    environment:
+      - CONFIG_PATH=/config.yaml
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:
