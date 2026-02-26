@@ -6,11 +6,33 @@ package testhelper
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/dlddu/my-auth/internal/database"
 )
+
+// migrationsDir returns the absolute path to the repo-root migrations/
+// directory. It uses the source location of this file (db.go) to anchor
+// the path, which is reliable regardless of the test package's working
+// directory when running `go test ./...`.
+func migrationsDir() string {
+	// __file__ is the absolute path to this source file at compile time.
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("testhelper: runtime.Caller failed")
+	}
+	// db.go lives at internal/testhelper/db.go.
+	// Walk up two levels to reach the repo root, then descend into migrations/.
+	repoRoot := filepath.Join(filepath.Dir(file), "..", "..")
+	abs, err := filepath.Abs(filepath.Join(repoRoot, "migrations"))
+	if err != nil {
+		panic(fmt.Sprintf("testhelper: resolve migrations dir: %v", err))
+	}
+	return abs
+}
 
 // NewTestDB creates a temporary SQLite database file, applies all migrations,
 // and registers t.Cleanup to close the connection and remove the file.
@@ -31,16 +53,15 @@ func NewTestDB(t *testing.T) string {
 		t.Fatalf("testhelper.NewTestDB: open database: %v", err)
 	}
 
-	// Resolve the migrations directory relative to the module root.
-	// When running `go test ./...` the working directory is the package directory,
-	// so we walk up to the repo root where migrations/ lives.
-	migrationsDir, err := filepath.Abs(filepath.Join("..", "..", "migrations"))
-	if err != nil {
+	migrations := migrationsDir()
+
+	// Sanity-check: the migrations directory must exist.
+	if _, err := os.Stat(migrations); err != nil {
 		db.Close()
-		t.Fatalf("testhelper.NewTestDB: resolve migrations path: %v", err)
+		t.Fatalf("testhelper.NewTestDB: migrations dir %q: %v", migrations, err)
 	}
 
-	if err := database.Migrate(db, migrationsDir); err != nil {
+	if err := database.Migrate(db, migrations); err != nil {
 		db.Close()
 		t.Fatalf("testhelper.NewTestDB: run migrations: %v", err)
 	}

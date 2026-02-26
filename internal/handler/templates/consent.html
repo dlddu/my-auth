@@ -1,0 +1,43 @@
+{{define "title"}}Authorize — my-auth{{end}}
+
+{{define "content"}}
+<div class="card">
+    <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem;text-align:center;">Authorize Application</h1>
+
+    <p style="color:#D1D5DB;font-size:0.875rem;text-align:center;margin-bottom:1.5rem;">
+        <strong>{{.ClientName}}</strong> is requesting access to your account.
+    </p>
+
+    {{if .ClientDomain}}
+    <p style="color:#9CA3AF;font-size:0.75rem;text-align:center;margin-bottom:1.5rem;">
+        {{.ClientDomain}}
+    </p>
+    {{end}}
+
+    {{if .Scopes}}
+    <div style="margin-bottom:1.5rem;">
+        <p style="font-size:0.875rem;color:#D1D5DB;margin-bottom:0.5rem;">This application is requesting the following permissions:</p>
+        <ul style="list-style:disc;padding-left:1.25rem;font-size:0.875rem;color:#F9FAFB;">
+            {{range .Scopes}}
+            <li>{{.}}</li>
+            {{end}}
+        </ul>
+    </div>
+    {{end}}
+
+    <form method="POST" action="/oauth2/auth?{{.QueryString}}">
+        <input type="hidden" name="challenge" value="{{.Challenge}}">
+
+        <div style="display:flex;gap:0.75rem;">
+            <button type="submit" name="action" value="approve"
+                    style="flex:1;padding:0.625rem;background-color:#6366F1;color:#F9FAFB;border:none;border-radius:0.375rem;font-size:1rem;cursor:pointer;">
+                Approve
+            </button>
+            <button type="submit" name="action" value="deny"
+                    style="flex:1;padding:0.625rem;background-color:#374151;color:#F9FAFB;border:none;border-radius:0.375rem;font-size:1rem;cursor:pointer;">
+                Deny
+            </button>
+        </div>
+    </form>
+</div>
+{{end}}

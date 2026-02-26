@@ -2,17 +2,25 @@
 package main
 
 import (
+	"context"
+	"crypto/rsa"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ory/fosite"
+	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/token/jwt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
 	"github.com/dlddu/my-auth/internal/handler"
 	"github.com/dlddu/my-auth/internal/keygen"
+	"github.com/dlddu/my-auth/internal/storage"
 )
 
 func main() {
@@ -60,7 +68,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 4. 라우터 설정
+	// 4. fosite OAuth2 provider 초기화
+	provider := buildFositeProvider(cfg, privateKey, db)
+
+	// 5. 라우터 설정
 	r := chi.NewRouter()
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -82,17 +93,13 @@ func main() {
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
 
-	r.Get("/oauth2/auth", func(w http.ResponseWriter, r *http.Request) {
-		if !handler.IsAuthenticated(r, db, cfg.SessionSecret) {
-			http.Redirect(w, r, "/login?return_to=/oauth2/auth", http.StatusFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("authorized"))
-	})
+	// OAuth2 authorisation endpoints.
+	oauth2AuthHandler := handler.NewOAuth2AuthHandler(cfg, db, provider)
+	r.Get("/oauth2/auth", oauth2AuthHandler)
+	r.Post("/oauth2/auth", oauth2AuthHandler)
+	r.Post("/oauth2/token", handler.NewOAuth2TokenHandler(cfg, provider))
 
-	// 5. 서버 시작
+	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	fmt.Fprintf(os.Stdout, "my-auth: listening on %s\n", addr)
 
@@ -100,4 +107,54 @@ func main() {
 		fmt.Fprintf(os.Stderr, "my-auth: server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// buildFositeProvider assembles a fosite.OAuth2Provider for production use.
+// It uses the provided database connection to back all token/session storage.
+func buildFositeProvider(cfg *config.Config, key *rsa.PrivateKey, db *sql.DB) fosite.OAuth2Provider {
+	store := storage.New(db)
+
+	// Derive a stable global secret from the session secret.
+	// Minimum 32 bytes required by fosite's HMAC strategy.
+	globalSecret := cfg.SessionSecret
+	for len(globalSecret) < 32 {
+		globalSecret += cfg.SessionSecret
+	}
+
+	fositeConfig := &fosite.Config{
+		GlobalSecret:                   []byte(globalSecret[:32]),
+		AuthorizeCodeLifespan:          10 * time.Minute,
+		AccessTokenLifespan:            time.Hour,
+		RefreshTokenLifespan:           720 * time.Hour,
+		IDTokenLifespan:                time.Hour,
+		IDTokenIssuer:                  cfg.Issuer,
+		SendDebugMessagesToClients:     false,
+		EnforcePKCE:                    false,
+		EnablePKCEPlainChallengeMethod: false,
+		TokenURL:                       cfg.Issuer + "/oauth2/token",
+	}
+
+	keyGetter := func(ctx context.Context) (interface{}, error) {
+		return key, nil
+	}
+
+	hmacStrategy := compose.NewOAuth2HMACStrategy(fositeConfig)
+	jwtStrategy := compose.NewOAuth2JWTStrategy(keyGetter, hmacStrategy, fositeConfig)
+
+	strategy := &compose.CommonStrategy{
+		CoreStrategy:               jwtStrategy,
+		OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyGetter, fositeConfig),
+		Signer: &jwt.DefaultSigner{
+			GetPrivateKey: keyGetter,
+		},
+	}
+
+	return compose.Compose(
+		fositeConfig,
+		store,
+		strategy,
+		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2RefreshTokenGrantFactory,
+		compose.OpenIDConnectExplicitFactory,
+	)
 }

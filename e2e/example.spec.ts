@@ -17,7 +17,6 @@ import { test, expect } from "@playwright/test";
 test.describe("Server health check", () => {
   test("GET /healthz returns 200 ok", async ({ page }) => {
     // TODO: Activate when DLD-579 is implemented
-    test.skip();
 
     // Act
     const response = await page.goto("/healthz");
@@ -32,7 +31,6 @@ test.describe("Server health check", () => {
 
   test("server responds within acceptable time", async ({ page }) => {
     // TODO: Activate when DLD-579 is implemented
-    test.skip();
 
     // Arrange
     const start = Date.now();
