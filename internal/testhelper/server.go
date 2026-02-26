@@ -76,6 +76,12 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("my-auth"))
+	})
+
 	r.Get("/.well-known/openid-configuration", handler.NewOIDCDiscoveryHandler(cfg.Issuer))
 	r.Get("/jwks", handler.NewJWKSHandler(privateKey))
 
