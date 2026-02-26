@@ -15,9 +15,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestLoginHandler_GetReturnsLoginForm(t *testing.T) {
-	// TODO: Activate when DLD-582 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange
 	srv, client := testhelper.NewTestServer(t)
 
@@ -68,9 +65,6 @@ func TestLoginHandler_GetReturnsLoginForm(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLoginHandler_PostValidCredentials(t *testing.T) {
-	// TODO: Activate when DLD-582 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange
 	srv, _ := testhelper.NewTestServer(t)
 
@@ -132,9 +126,6 @@ func TestLoginHandler_PostValidCredentials(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLoginHandler_PostValidCredentials_RedirectTracked(t *testing.T) {
-	// TODO: Activate when DLD-582 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange
 	srv, _ := testhelper.NewTestServer(t)
 	client, transport := testhelper.NewTestClient(t)
@@ -173,9 +164,6 @@ func TestLoginHandler_PostValidCredentials_RedirectTracked(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLoginHandler_PostInvalidCredentials(t *testing.T) {
-	// TODO: Activate when DLD-582 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange
 	srv, client := testhelper.NewTestServer(t)
 
@@ -250,9 +238,6 @@ func TestLoginHandler_PostInvalidCredentials(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLoginHandler_SessionCookieMaintainsAuthState(t *testing.T) {
-	// TODO: Activate when DLD-582 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange
 	srv, _ := testhelper.NewTestServer(t)
 
