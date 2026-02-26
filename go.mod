@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/go-chi/chi/v5 v5.2.5
+	github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/ory/fosite v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -18,7 +19,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobuffalo/pop/v6 v6.1.1 // indirect

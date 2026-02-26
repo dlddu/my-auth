@@ -1,11 +1,16 @@
 package testhelper
 
 import (
+	"crypto/rsa"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/dlddu/my-auth/internal/config"
+	"github.com/dlddu/my-auth/internal/handler"
+	"github.com/dlddu/my-auth/internal/keygen"
 )
 
 // NewTestServer creates a minimal httptest.Server backed by a temporary SQLite
@@ -13,12 +18,6 @@ import (
 //
 // The server is started immediately and registered with t.Cleanup so it is
 // closed automatically when the test finishes.
-//
-// NOTE: cmd/server/main.go is currently a stub — the router wired here is a
-// minimal chi router that serves a health-check endpoint.  Replace the body of
-// buildRouter with the real application router once it is implemented.
-// The function signature and setup pattern are intentionally stable so future
-// refactors only need to update buildRouter.
 func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	t.Helper()
 
@@ -27,13 +26,18 @@ func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 
 	// Build config pointing at the test database.
 	cfg := NewTestConfig(t, dsn)
-	_ = cfg // cfg will be passed to the real router once it is implemented.
+
+	// Generate a test RSA key pair (in-memory, no disk I/O required).
+	key, err := keygen.GenerateRSAKeyPair(keygen.DefaultKeyBits)
+	if err != nil {
+		t.Fatalf("testhelper: generate RSA key pair: %v", err)
+	}
 
 	// Build the HTTP handler.
-	handler := buildRouter()
+	h := buildRouter(cfg, key)
 
 	// Start an unencrypted test server on a random local port.
-	srv := httptest.NewServer(handler)
+	srv := httptest.NewServer(h)
 
 	t.Cleanup(func() {
 		srv.Close()
@@ -46,21 +50,21 @@ func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	return srv, client
 }
 
-// buildRouter constructs the application's http.Handler.
-//
-// This is a STUB — it returns a minimal chi router with a single health-check
-// endpoint so the test infrastructure compiles and the CI pipeline is green
-// from day one.  The real application routes will be wired here as part of
-// subsequent implementation tasks.
-func buildRouter() http.Handler {
+// buildRouter constructs the application's http.Handler with the provided
+// config and RSA private key.
+func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey) http.Handler {
 	r := chi.NewRouter()
 
-	// Health check — the only real endpoint until the server is implemented.
+	// Health check — used by the Playwright webServer probe and future
+	// load-balancer readiness checks.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	r.Get("/.well-known/openid-configuration", handler.NewOIDCDiscoveryHandler(cfg.Issuer))
+	r.Get("/jwks", handler.NewJWKSHandler(privateKey))
 
 	return r
 }

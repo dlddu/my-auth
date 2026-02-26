@@ -3,11 +3,8 @@ import { test, expect } from "@playwright/test";
 /**
  * OIDC Discovery & JWKS e2e specs.
  *
- * All tests in this file are skipped (DLD-580) until the server implements
- * the /.well-known/openid-configuration and /jwks endpoints.  Remove the
- * `test.skip()` calls once the server is implemented.
- *
- * TODO: Activate when DLD-580 is implemented.
+ * Covers the /.well-known/openid-configuration and /jwks endpoints.
+ * Activated for DLD-580.
  */
 
 // ---------------------------------------------------------------------------
@@ -16,9 +13,6 @@ import { test, expect } from "@playwright/test";
 
 test.describe("GET /.well-known/openid-configuration", () => {
   test("returns HTTP 200", async ({ request }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/.well-known/openid-configuration");
 
@@ -27,9 +21,6 @@ test.describe("GET /.well-known/openid-configuration", () => {
   });
 
   test("returns Content-Type: application/json", async ({ request }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/.well-known/openid-configuration");
 
@@ -41,9 +32,6 @@ test.describe("GET /.well-known/openid-configuration", () => {
   test("response body contains all required OIDC Discovery fields", async ({
     request,
   }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/.well-known/openid-configuration");
     const body = await response.json();
@@ -70,9 +58,6 @@ test.describe("GET /.well-known/openid-configuration", () => {
   });
 
   test("jwks_uri field is a valid URL", async ({ request }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/.well-known/openid-configuration");
     const body = await response.json();
@@ -90,9 +75,6 @@ test.describe("GET /.well-known/openid-configuration", () => {
 
 test.describe("GET /jwks", () => {
   test("returns HTTP 200", async ({ request }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/jwks");
 
@@ -101,9 +83,6 @@ test.describe("GET /jwks", () => {
   });
 
   test("returns Content-Type: application/json", async ({ request }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/jwks");
 
@@ -115,9 +94,6 @@ test.describe("GET /jwks", () => {
   test("response body is a valid JWK Set with a keys array", async ({
     request,
   }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/jwks");
     const body = await response.json();
@@ -131,9 +107,6 @@ test.describe("GET /jwks", () => {
   test("response contains at least one RSA public key", async ({
     request,
   }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/jwks");
     const body = await response.json();
@@ -146,9 +119,6 @@ test.describe("GET /jwks", () => {
   });
 
   test("RSA key does not expose private key fields", async ({ request }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/jwks");
     const body = await response.json();
@@ -158,10 +128,7 @@ test.describe("GET /jwks", () => {
     const privateFields = ["d", "p", "q", "dp", "dq", "qi"];
     for (const key of body.keys) {
       for (const field of privateFields) {
-        expect(key).not.toHaveProperty(
-          field,
-          `RSA key (kid=${key.kid}) must not expose private field "${field}"`
-        );
+        expect(key).not.toHaveProperty(field);
       }
     }
   });
@@ -175,9 +142,6 @@ test.describe("JWKS public key usability for JWT signature verification", () => 
   test("RSA public key contains all fields required for JWT verification", async ({
     request,
   }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/jwks");
     const body = await response.json();
@@ -191,10 +155,7 @@ test.describe("JWKS public key usability for JWT signature verification", () => 
     const requiredFields = ["n", "e", "kty", "kid", "use", "alg"];
     for (const key of rsaKeys) {
       for (const field of requiredFields) {
-        expect(key).toHaveProperty(
-          field,
-          `RSA key must have required field "${field}"`
-        );
+        expect(key).toHaveProperty(field);
         expect((key as Record<string, unknown>)[field]).toBeTruthy();
       }
     }
@@ -203,9 +164,6 @@ test.describe("JWKS public key usability for JWT signature verification", () => 
   test("RSA public key modulus and exponent are base64url encoded strings", async ({
     request,
   }) => {
-    // TODO: Activate when DLD-580 is implemented
-    test.skip();
-
     // Act
     const response = await request.get("/jwks");
     const body = await response.json();
