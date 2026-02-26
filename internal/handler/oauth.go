@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 
 	"github.com/ory/fosite"
 
@@ -63,20 +64,27 @@ func NewOAuth2AuthHandler(cfg *config.Config, db *sql.DB, provider fosite.OAuth2
 }
 
 // handleOAuth2AuthGet processes GET /oauth2/auth.
-// It delegates to fosite to validate the authorise request parameters, then
-// either redirects unauthenticated users to /login or renders the consent page.
+// It first validates the OAuth2 request parameters via fosite so that
+// invalid client_id or redirect_uri mismatches receive proper RFC 6749
+// error responses before any authentication check. If the request is
+// valid, unauthenticated users are redirected to /login with the full
+// query string preserved so the flow can resume after login.
 func handleOAuth2AuthGet(w http.ResponseWriter, r *http.Request, cfg *config.Config, db *sql.DB, provider fosite.OAuth2Provider) {
-	// 미인증 사용자를 로그인 페이지로 리다이렉트한다.
-	if !IsAuthenticated(r, db, cfg.SessionSecret) {
-		http.Redirect(w, r, "/login?return_to=/oauth2/auth", http.StatusFound)
-		return
-	}
-
-	// fosite로 인가 요청을 파싱하고 검증한다.
+	// Validate the OAuth2 request parameters first. This ensures that
+	// invalid client_id or redirect_uri mismatches return proper 4xx
+	// errors rather than falling through to the login redirect.
 	ctx := r.Context()
 	authReq, err := provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
 		provider.WriteAuthorizeError(ctx, w, authReq, err)
+		return
+	}
+
+	// Redirect unauthenticated users to login, preserving the full query
+	// string so the OAuth2 flow can resume after successful authentication.
+	if !IsAuthenticated(r, db, cfg.SessionSecret) {
+		returnTo := "/oauth2/auth?" + r.URL.RawQuery
+		http.Redirect(w, r, "/login?return_to="+url.QueryEscape(returnTo), http.StatusFound)
 		return
 	}
 
