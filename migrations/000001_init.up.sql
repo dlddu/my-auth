@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     subject         TEXT NOT NULL,
     scopes          TEXT NOT NULL,  -- space-separated
     expires_at      DATETIME NOT NULL,
+    session_data    TEXT NOT NULL DEFAULT '{}',
+    form_data       TEXT NOT NULL DEFAULT '{}',
     created_at      DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -40,11 +42,14 @@ CREATE TABLE IF NOT EXISTS authorization_codes (
     scopes          TEXT NOT NULL,  -- space-separated
     expires_at      DATETIME NOT NULL,
     used            INTEGER NOT NULL DEFAULT 0,
+    session_data    TEXT NOT NULL DEFAULT '{}',
+    form_data       TEXT NOT NULL DEFAULT '{}',
     created_at      DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     signature       TEXT PRIMARY KEY,
+    request_id      TEXT NOT NULL DEFAULT '',
     client_id       TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     subject         TEXT NOT NULL,
     scopes          TEXT NOT NULL,  -- space-separated

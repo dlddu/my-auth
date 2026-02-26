@@ -21,7 +21,7 @@ const testClientSecretHash = "$2a$10$W56btv7OINIPA/cdcVu8j.JfidjXwBpLE3CkJUlAfK.
 const testRedirectURI = "http://localhost:9999/callback"
 
 // testClientScopes is the space-separated scope list for the test OAuth2 client.
-const testClientScopes = "openid profile email"
+const testClientScopes = "openid profile email offline_access"
 
 // SeedTestClient inserts the canonical test OAuth2 client into the clients
 // table of db. It is idempotent: if the client already exists the insert is

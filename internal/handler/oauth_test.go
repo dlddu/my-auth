@@ -55,7 +55,7 @@ func buildAuthURL(srvURL string, extraParams url.Values) string {
 		"response_type": {"code"},
 		"client_id":     {"test-client"},
 		"redirect_uri":  {"http://localhost:9999/callback"},
-		"scope":         {"openid profile email"},
+		"scope":         {"openid profile email offline_access"},
 		"state":         {"test-state-value"},
 		"nonce":         {"test-nonce-value"},
 	}

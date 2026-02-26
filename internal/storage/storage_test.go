@@ -406,7 +406,7 @@ func TestRefreshTokenStore_CreateAndGet_Success(t *testing.T) {
 	req := makeRequester("test-client", "admin@test.local", "openid", "offline_access")
 
 	// Act — create
-	if err := store.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, sig, "access-sig-001", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 
@@ -461,7 +461,7 @@ func TestRefreshTokenStore_Delete_RemovesToken(t *testing.T) {
 	sig := "refresh-token-sig-002"
 	req := makeRequester("test-client", "admin@test.local", "openid")
 
-	if err := store.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, sig, "access-sig-002", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 
@@ -494,12 +494,12 @@ func TestRefreshTokenStore_Revoke_PreventsUse(t *testing.T) {
 	sig := "refresh-token-sig-003"
 	req := makeRequester("test-client", "admin@test.local", "openid")
 
-	if err := store.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, sig, "access-sig-003", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 
-	// Act — revoke
-	if err := store.RevokeRefreshToken(ctx, sig); err != nil {
+	// Act — revoke by request ID (fosite revokes by request ID, not signature)
+	if err := store.RevokeRefreshToken(ctx, req.GetID()); err != nil {
 		t.Fatalf("RevokeRefreshToken: %v", err)
 	}
 

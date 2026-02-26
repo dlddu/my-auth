@@ -12,10 +12,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/ory/fosite"
+	"github.com/ory/fosite/token/jwt"
 )
 
 // ---------------------------------------------------------------------------
@@ -96,6 +98,19 @@ func (s *ClientStore) GetClient(ctx context.Context, id string) (fosite.Client, 
 	}, nil
 }
 
+// ClientAssertionJWTValid returns an error if the JTI is known or the DB
+// check failed. Since this server does not use JWT client assertions, we
+// always return nil (JTI is never "known").
+func (s *ClientStore) ClientAssertionJWTValid(ctx context.Context, jti string) error {
+	return nil
+}
+
+// SetClientAssertionJWT marks a JTI as known for the given expiry time.
+// Since this server does not use JWT client assertions, this is a no-op.
+func (s *ClientStore) SetClientAssertionJWT(ctx context.Context, jti string, exp time.Time) error {
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // AuthorizeCodeStore
 // ---------------------------------------------------------------------------
@@ -126,15 +141,27 @@ func (s *AuthorizeCodeStore) CreateAuthorizeCodeSession(ctx context.Context, cod
 		}
 	}
 
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO authorization_codes (code, client_id, subject, redirect_uri, scopes, expires_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+	// Serialize session and form data.
+	sessionJSON, err := json.Marshal(request.GetSession())
+	if err != nil {
+		return fmt.Errorf("storage: CreateAuthorizeCodeSession marshal session: %w", err)
+	}
+	formJSON, err := json.Marshal(map[string][]string(request.GetRequestForm()))
+	if err != nil {
+		return fmt.Errorf("storage: CreateAuthorizeCodeSession marshal form: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO authorization_codes (code, client_id, subject, redirect_uri, scopes, expires_at, session_data, form_data)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		code,
 		request.GetClient().GetID(),
 		request.GetSession().GetSubject(),
 		redirectURI,
 		scopes,
 		expiresAt.UTC().Format(time.RFC3339),
+		string(sessionJSON),
+		string(formJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("storage: CreateAuthorizeCodeSession: %w", err)
@@ -147,7 +174,7 @@ func (s *AuthorizeCodeStore) CreateAuthorizeCodeSession(ctx context.Context, cod
 // Returns fosite.ErrInvalidatedAuthorizeCode when the code has already been used.
 func (s *AuthorizeCodeStore) GetAuthorizeCodeSession(ctx context.Context, code string, session fosite.Session) (fosite.Requester, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT client_id, subject, redirect_uri, scopes, expires_at, used
+		`SELECT client_id, subject, redirect_uri, scopes, expires_at, used, session_data, form_data
 		   FROM authorization_codes WHERE code = ?`, code)
 
 	var (
@@ -157,9 +184,11 @@ func (s *AuthorizeCodeStore) GetAuthorizeCodeSession(ctx context.Context, code s
 		scopes      string
 		expiresAt   string
 		used        int
+		sessionData string
+		formData    string
 	)
 
-	if err := row.Scan(&clientID, &subject, &redirectURI, &scopes, &expiresAt, &used); err != nil {
+	if err := row.Scan(&clientID, &subject, &redirectURI, &scopes, &expiresAt, &used, &sessionData, &formData); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fosite.ErrNotFound
 		}
@@ -178,9 +207,15 @@ func (s *AuthorizeCodeStore) GetAuthorizeCodeSession(ctx context.Context, code s
 		return nil, fosite.ErrTokenExpired
 	}
 
-	// Populate the session with the stored subject.
+	// Restore session from stored data.
 	if session != nil {
-		session.SetSubject(subject)
+		if sessionData != "" && sessionData != "{}" {
+			if err := json.Unmarshal([]byte(sessionData), session); err != nil {
+				setSessionSubject(session, subject)
+			}
+		} else {
+			setSessionSubject(session, subject)
+		}
 		session.SetExpiresAt(fosite.AuthorizeCode, expiry)
 	}
 
@@ -195,6 +230,14 @@ func (s *AuthorizeCodeStore) GetAuthorizeCodeSession(ctx context.Context, code s
 	req.SetSession(session)
 	req.GrantedScope = strings.Fields(scopes)
 	req.Client = client
+
+	// Restore form data.
+	if formData != "" && formData != "{}" {
+		var formMap map[string][]string
+		if err := json.Unmarshal([]byte(formData), &formMap); err == nil {
+			req.Form = url.Values(formMap)
+		}
+	}
 
 	return req, nil
 }
@@ -284,7 +327,7 @@ func (s *AccessTokenStore) GetAccessTokenSession(ctx context.Context, signature 
 	}
 
 	if session != nil {
-		session.SetSubject(subject)
+		setSessionSubject(session, subject)
 		session.SetExpiresAt(fosite.AccessToken, expiry)
 	}
 
@@ -305,6 +348,15 @@ func (s *AccessTokenStore) DeleteAccessTokenSession(ctx context.Context, signatu
 	return nil
 }
 
+// RevokeAccessToken revokes an access token by request ID, required by oauth2.TokenRevocationStorage.
+func (s *AccessTokenStore) RevokeAccessToken(ctx context.Context, requestID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM tokens WHERE request_id = ?`, requestID)
+	if err != nil {
+		return fmt.Errorf("storage: RevokeAccessToken: %w", err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // RefreshTokenStore
 // ---------------------------------------------------------------------------
@@ -320,16 +372,17 @@ func NewRefreshTokenStore(db *sql.DB) *RefreshTokenStore {
 }
 
 // CreateRefreshTokenSession stores a refresh token session.
-func (s *RefreshTokenStore) CreateRefreshTokenSession(ctx context.Context, signature string, request fosite.Requester) error {
+func (s *RefreshTokenStore) CreateRefreshTokenSession(ctx context.Context, signature string, accessSignature string, request fosite.Requester) error {
 	expiresAt := request.GetSession().GetExpiresAt(fosite.RefreshToken)
 	if expiresAt.IsZero() {
 		expiresAt = time.Now().Add(720 * time.Hour) // 30 days
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO refresh_tokens (signature, client_id, subject, scopes, expires_at)
-		 VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO refresh_tokens (signature, request_id, client_id, subject, scopes, expires_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
 		signature,
+		request.GetID(),
 		request.GetClient().GetID(),
 		request.GetSession().GetSubject(),
 		strings.Join(request.GetGrantedScopes(), " "),
@@ -345,10 +398,11 @@ func (s *RefreshTokenStore) CreateRefreshTokenSession(ctx context.Context, signa
 // Returns fosite.ErrNotFound when the token does not exist.
 func (s *RefreshTokenStore) GetRefreshTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT client_id, subject, scopes, expires_at, revoked
+		`SELECT request_id, client_id, subject, scopes, expires_at, revoked
 		   FROM refresh_tokens WHERE signature = ?`, signature)
 
 	var (
+		requestID string
 		clientID  string
 		subject   string
 		scopes    string
@@ -356,7 +410,7 @@ func (s *RefreshTokenStore) GetRefreshTokenSession(ctx context.Context, signatur
 		revoked   int
 	)
 
-	if err := row.Scan(&clientID, &subject, &scopes, &expiresAt, &revoked); err != nil {
+	if err := row.Scan(&requestID, &clientID, &subject, &scopes, &expiresAt, &revoked); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fosite.ErrNotFound
 		}
@@ -376,11 +430,12 @@ func (s *RefreshTokenStore) GetRefreshTokenSession(ctx context.Context, signatur
 	}
 
 	if session != nil {
-		session.SetSubject(subject)
+		setSessionSubject(session, subject)
 		session.SetExpiresAt(fosite.RefreshToken, expiry)
 	}
 
 	req := fosite.NewRequest()
+	req.ID = requestID
 	req.SetSession(session)
 	req.GrantedScope = strings.Fields(scopes)
 
@@ -400,7 +455,7 @@ func (s *RefreshTokenStore) DeleteRefreshTokenSession(ctx context.Context, signa
 // (required by fosite's RevokeRefreshTokenMayRace flow).
 func (s *RefreshTokenStore) RevokeRefreshToken(ctx context.Context, requestID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE refresh_tokens SET revoked = 1 WHERE signature = ?`, requestID)
+		`UPDATE refresh_tokens SET revoked = 1 WHERE request_id = ?`, requestID)
 	if err != nil {
 		return fmt.Errorf("storage: RevokeRefreshToken: %w", err)
 	}
@@ -409,6 +464,11 @@ func (s *RefreshTokenStore) RevokeRefreshToken(ctx context.Context, requestID st
 
 // RevokeRefreshTokenMayRace satisfies fosite's optional interface.
 func (s *RefreshTokenStore) RevokeRefreshTokenMayRace(ctx context.Context, requestID string) error {
+	return s.RevokeRefreshToken(ctx, requestID)
+}
+
+// RotateRefreshToken rotates a refresh token, required by oauth2.RefreshTokenStorage.
+func (s *RefreshTokenStore) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) error {
 	return s.RevokeRefreshToken(ctx, requestID)
 }
 
@@ -433,14 +493,28 @@ func (s *OpenIDConnectRequestStore) CreateOpenIDConnectSession(ctx context.Conte
 		expiresAt = time.Now().Add(10 * time.Minute)
 	}
 
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, client_id, subject, scopes, expires_at)
-		 VALUES (?, ?, ?, ?, ?)`,
+	// Serialize the session as JSON so it can be fully restored later.
+	sessionJSON, err := json.Marshal(request.GetSession())
+	if err != nil {
+		return fmt.Errorf("storage: CreateOpenIDConnectSession marshal session: %w", err)
+	}
+
+	// Serialize the request form as JSON to preserve nonce and other params.
+	formJSON, err := json.Marshal(map[string][]string(request.GetRequestForm()))
+	if err != nil {
+		return fmt.Errorf("storage: CreateOpenIDConnectSession marshal form: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO sessions (id, client_id, subject, scopes, expires_at, session_data, form_data)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		authorizeCode,
 		request.GetClient().GetID(),
 		request.GetSession().GetSubject(),
 		strings.Join(request.GetGrantedScopes(), " "),
 		expiresAt.UTC().Format(time.RFC3339),
+		string(sessionJSON),
+		string(formJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("storage: CreateOpenIDConnectSession: %w", err)
@@ -452,17 +526,19 @@ func (s *OpenIDConnectRequestStore) CreateOpenIDConnectSession(ctx context.Conte
 // Returns fosite.ErrNotFound when no session exists for the code.
 func (s *OpenIDConnectRequestStore) GetOpenIDConnectSession(ctx context.Context, authorizeCode string, request fosite.Requester) (fosite.Requester, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT client_id, subject, scopes, expires_at
+		`SELECT client_id, subject, scopes, expires_at, session_data, form_data
 		   FROM sessions WHERE id = ?`, authorizeCode)
 
 	var (
-		clientID  string
-		subject   string
-		scopes    string
-		expiresAt string
+		clientID    string
+		subject     string
+		scopes      string
+		expiresAt   string
+		sessionData string
+		formData    string
 	)
 
-	if err := row.Scan(&clientID, &subject, &scopes, &expiresAt); err != nil {
+	if err := row.Scan(&clientID, &subject, &scopes, &expiresAt, &sessionData, &formData); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fosite.ErrNotFound
 		}
@@ -474,9 +550,21 @@ func (s *OpenIDConnectRequestStore) GetOpenIDConnectSession(ctx context.Context,
 		return nil, fmt.Errorf("storage: GetOpenIDConnectSession parse expires_at: %w", err)
 	}
 
+	// Restore the session from the incoming request (which carries the correct session type).
 	sess := request.GetSession()
+
+	// Attempt to unmarshal the stored session data into the session.
+	// This restores IDTokenClaims including nonce, auth_time, etc.
+	if sessionData != "" && sessionData != "{}" {
+		if err := json.Unmarshal([]byte(sessionData), sess); err != nil {
+			// If unmarshal fails, fall back to setting subject manually.
+			setSessionSubject(sess, subject)
+		}
+	} else {
+		setSessionSubject(sess, subject)
+	}
+
 	if sess != nil {
-		sess.SetSubject(subject)
 		sess.SetExpiresAt(fosite.AuthorizeCode, expiry)
 	}
 
@@ -491,6 +579,14 @@ func (s *OpenIDConnectRequestStore) GetOpenIDConnectSession(ctx context.Context,
 	req.Client = client
 	req.SetSession(sess)
 	req.GrantedScope = strings.Fields(scopes)
+
+	// Restore the form data so fosite can read nonce and other params.
+	if formData != "" && formData != "{}" {
+		var formMap map[string][]string
+		if err := json.Unmarshal([]byte(formData), &formMap); err == nil {
+			req.Form = url.Values(formMap)
+		}
+	}
 
 	return req, nil
 }
@@ -529,3 +625,33 @@ func New(db *sql.DB) *Store {
 		OpenIDConnectRequestStore: NewOpenIDConnectRequestStore(db),
 	}
 }
+
+// setSessionSubject attempts to set the Subject field on the session through
+// type assertions against known fosite session types. It also propagates the
+// subject into ID token claims and JWT access token claims when available.
+func setSessionSubject(session fosite.Session, subject string) {
+	// Set the top-level Subject field via SetSubject if available.
+	if setter, ok := session.(interface{ SetSubject(string) }); ok {
+		setter.SetSubject(subject)
+	}
+
+	// Also set IDTokenClaims.Subject for OIDC id_token generation.
+	if oidcSession, ok := session.(interface {
+		IDTokenClaims() *jwt.IDTokenClaims
+	}); ok {
+		if claims := oidcSession.IDTokenClaims(); claims != nil {
+			claims.Subject = subject
+		}
+	}
+
+	// Also set JWTClaims.Subject for JWT access token generation.
+	type jwtClaimsGetter interface {
+		GetJWTClaims() jwt.JWTClaimsContainer
+	}
+	if jwtSession, ok := session.(jwtClaimsGetter); ok {
+		if jwtClaims, ok := jwtSession.GetJWTClaims().(*jwt.JWTClaims); ok && jwtClaims != nil {
+			jwtClaims.Subject = subject
+		}
+	}
+}
+

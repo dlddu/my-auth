@@ -131,6 +131,10 @@ func handleOAuth2AuthPost(w http.ResponseWriter, r *http.Request, cfg *config.Co
 		authReq.GrantScope(scope)
 	}
 
+	for _, audience := range authReq.GetRequestedAudience() {
+		authReq.GrantAudience(audience)
+	}
+
 	// 認証済みユーザーのサブジェクトを取得する。
 	subject := getSubjectFromSession(r, db, cfg.SessionSecret)
 	mySession := newFositeSession(subject, cfg.Issuer)
