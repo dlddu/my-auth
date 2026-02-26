@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 
@@ -27,7 +28,7 @@ func main() {
 		fmt.Fprintf(os.Stdout, "my-auth: key file not found, generating new RSA key pair at %s\n", cfg.JWTKeyPath)
 
 		// 부모 디렉터리 생성
-		if mkErr := os.MkdirAll(dirOf(cfg.JWTKeyPath), 0700); mkErr != nil {
+		if mkErr := os.MkdirAll(filepath.Dir(cfg.JWTKeyPath), 0700); mkErr != nil {
 			fmt.Fprintf(os.Stderr, "my-auth: create key directory: %v\n", mkErr)
 			os.Exit(1)
 		}
@@ -64,14 +65,4 @@ func main() {
 		fmt.Fprintf(os.Stderr, "my-auth: server error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-// dirOf returns the directory component of a file path.
-func dirOf(path string) string {
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' || path[i] == '\\' {
-			return path[:i]
-		}
-	}
-	return "."
 }
