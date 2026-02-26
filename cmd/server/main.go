@@ -54,7 +54,7 @@ func main() {
 	}
 	defer db.Close()
 
-	migrationsDir := filepath.Join(filepath.Dir(os.Args[0]), "migrations")
+	migrationsDir := "migrations"
 	if err := database.Migrate(db, migrationsDir); err != nil {
 		fmt.Fprintf(os.Stderr, "my-auth: migrate database: %v\n", err)
 		os.Exit(1)
