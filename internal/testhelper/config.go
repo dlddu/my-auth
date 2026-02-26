@@ -12,7 +12,7 @@ const testOwnerUsername = "admin@test.local"
 // testOwnerPasswordHash is the bcrypt hash of "test-password" with cost 12.
 // Pre-computed to avoid expensive bcrypt work in every test setup.
 // Plain-text: "test-password"
-const testOwnerPasswordHash = "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG2NRLT3cO"
+const testOwnerPasswordHash = "$2a$12$f9hwtKC5D99r4BOC0UJwM.To6001PN8CS4TEVUEH.IQOGoPWuPZvy"
 
 // testJWTKeyPath is a sentinel path for the JWT signing key in tests.
 // The actual key file is not required until the server boots; test helpers
