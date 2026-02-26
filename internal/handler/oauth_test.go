@@ -101,52 +101,56 @@ func TestOAuth2Auth_Get_UnauthenticatedRedirectsToLogin(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// GET /oauth2/auth — 인증된 사용자에게 consent 페이지 표시
+// GET /oauth2/auth — 인증된 사용자 자동 승인 및 리다이렉트
 // ---------------------------------------------------------------------------
 
-// TestOAuth2Auth_Get_AuthenticatedShowsConsentPage verifies that an
-// authenticated user with valid OAuth2 parameters sees the consent page.
-func TestOAuth2Auth_Get_AuthenticatedShowsConsentPage(t *testing.T) {
+// TestOAuth2Auth_Get_AuthenticatedAutoApprovesAndRedirects verifies that an
+// authenticated user with valid OAuth2 parameters is automatically approved
+// and redirected to the callback URI with an authorization code.
+func TestOAuth2Auth_Get_AuthenticatedAutoApprovesAndRedirects(t *testing.T) {
 	// Arrange
 	srv, _ := testhelper.NewTestServer(t)
 	client, _ := loginAndGetClient(t, srv.URL)
 
+	// Use a client that stops before following external redirects
+	stopClient := &http.Client{
+		Jar: client.Jar,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if strings.HasPrefix(req.URL.String(), "http://localhost:9999/callback") {
+				return http.ErrUseLastResponse
+			}
+			if len(via) >= 10 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
 	// Act
-	resp, err := client.Get(buildAuthURL(srv.URL, nil))
+	resp, err := stopClient.Get(buildAuthURL(srv.URL, nil))
 	if err != nil {
 		t.Fatalf("GET /oauth2/auth: %v", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// Assert — must redirect to callback with code
+	location := resp.Header.Get("Location")
+	if location == "" {
+		t.Fatal("no Location header in redirect response")
+	}
+	if !strings.HasPrefix(location, "http://localhost:9999/callback") {
+		t.Errorf("Location = %q, want it to start with callback URL", location)
+	}
+
+	parsed, err := url.Parse(location)
 	if err != nil {
-		t.Fatalf("io.ReadAll: %v", err)
+		t.Fatalf("url.Parse Location: %v", err)
 	}
-
-	// Assert — 200 OK (not a redirect)
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d, want %d; body = %.300s", resp.StatusCode, http.StatusOK, body)
+	if code := parsed.Query().Get("code"); code == "" {
+		t.Error("callback URL does not contain code parameter")
 	}
-
-	// Assert — response is HTML
-	ct := resp.Header.Get("Content-Type")
-	if !strings.Contains(ct, "text/html") {
-		t.Errorf("Content-Type = %q, want it to contain %q", ct, "text/html")
-	}
-
-	bodyStr := string(body)
-
-	// Assert — consent page must contain Approve and Deny buttons
-	if !strings.Contains(bodyStr, "Approve") {
-		t.Errorf("consent page does not contain Approve button; body = %.200s", bodyStr)
-	}
-	if !strings.Contains(bodyStr, "Deny") {
-		t.Errorf("consent page does not contain Deny button; body = %.200s", bodyStr)
-	}
-
-	// Assert — client id must be mentioned
-	if !strings.Contains(bodyStr, "test-client") {
-		t.Errorf("consent page does not mention client id %q; body = %.200s", "test-client", bodyStr)
+	if state := parsed.Query().Get("state"); state != "test-state-value" {
+		t.Errorf("state = %q, want %q", state, "test-state-value")
 	}
 }
 
@@ -244,39 +248,12 @@ func TestOAuth2Auth_Post_Approve_IssuessAuthorizationCode(t *testing.T) {
 	}
 }
 
-// TestOAuth2Auth_Post_Approve_StateIsPreserved verifies that the state
-// parameter is echoed back in the callback URL.
-func TestOAuth2Auth_Post_Approve_StateIsPreserved(t *testing.T) {
-	// Arrange
+// TestOAuth2Auth_Get_AutoApprove_StateIsPreserved verifies that the state
+// parameter is echoed back in the auto-approve redirect callback URL.
+func TestOAuth2Auth_Get_AutoApprove_StateIsPreserved(t *testing.T) {
 	srv, _ := testhelper.NewTestServer(t)
-	client, _ := testhelper.NewTestClient(t)
+	client, _ := loginAndGetClient(t, srv.URL)
 
-	// Log in
-	loginForm := url.Values{"username": {"admin@test.local"}, "password": {"test-password"}}
-	loginReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/login",
-		strings.NewReader(loginForm.Encode()))
-	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	loginResp, err := client.Do(loginReq)
-	if err != nil {
-		t.Fatalf("POST /login: %v", err)
-	}
-	loginResp.Body.Close()
-
-	// GET /oauth2/auth — retrieve challenge
-	getResp, err := client.Get(buildAuthURL(srv.URL, nil))
-	if err != nil {
-		t.Fatalf("GET /oauth2/auth: %v", err)
-	}
-	pageBody, _ := io.ReadAll(getResp.Body)
-	getResp.Body.Close()
-
-	if getResp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /oauth2/auth status = %d, want 200", getResp.StatusCode)
-	}
-
-	challenge := extractHiddenInputValue(string(pageBody), "challenge")
-
-	// POST approve — stop before following the callback redirect
 	stopClient := &http.Client{
 		Jar: client.Jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -290,28 +267,13 @@ func TestOAuth2Auth_Post_Approve_StateIsPreserved(t *testing.T) {
 		},
 	}
 
-	consentForm := url.Values{"action": {"approve"}, "challenge": {challenge}}
-	consentReq, _ := http.NewRequest(http.MethodPost, buildAuthURL(srv.URL, nil),
-		strings.NewReader(consentForm.Encode()))
-	consentReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, c := range client.Jar.Cookies(mustParseURL(t, srv.URL)) {
-		consentReq.AddCookie(c)
+	resp, err := stopClient.Get(buildAuthURL(srv.URL, nil))
+	if err != nil {
+		t.Fatalf("GET /oauth2/auth: %v", err)
 	}
+	resp.Body.Close()
 
-	// Act
-	consentResp, err := stopClient.Do(consentReq)
-	if err != nil && !strings.Contains(err.Error(), "use last response") {
-		t.Fatalf("POST /oauth2/auth: %v", err)
-	}
-	if consentResp != nil {
-		consentResp.Body.Close()
-	}
-
-	// Assert — state in callback URL
-	var callbackURL string
-	if consentResp != nil {
-		callbackURL = consentResp.Header.Get("Location")
-	}
+	callbackURL := resp.Header.Get("Location")
 	if callbackURL == "" {
 		t.Skip("callback URL not captured; skipping state assertion")
 	}
@@ -330,28 +292,12 @@ func TestOAuth2Auth_Post_Approve_StateIsPreserved(t *testing.T) {
 // POST /oauth2/auth — consent 거부 → 에러 응답
 // ---------------------------------------------------------------------------
 
-// TestOAuth2Auth_Post_Deny_ReturnsError verifies that denying the consent form
-// does not issue an authorization code.
+// TestOAuth2Auth_Post_Deny_ReturnsError verifies that POSTing action=deny
+// does not issue an authorization code and returns an error redirect.
 func TestOAuth2Auth_Post_Deny_ReturnsError(t *testing.T) {
-	// Arrange
 	srv, _ := testhelper.NewTestServer(t)
 	client, _ := loginAndGetClient(t, srv.URL)
 
-	// GET /oauth2/auth
-	getResp, err := client.Get(buildAuthURL(srv.URL, nil))
-	if err != nil {
-		t.Fatalf("GET /oauth2/auth: %v", err)
-	}
-	body, _ := io.ReadAll(getResp.Body)
-	getResp.Body.Close()
-
-	if getResp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /oauth2/auth status = %d, want 200", getResp.StatusCode)
-	}
-
-	challenge := extractHiddenInputValue(string(body), "challenge")
-
-	// Act — POST deny
 	stopClient := &http.Client{
 		Jar: client.Jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -365,7 +311,7 @@ func TestOAuth2Auth_Post_Deny_ReturnsError(t *testing.T) {
 		},
 	}
 
-	consentForm := url.Values{"action": {"deny"}, "challenge": {challenge}}
+	consentForm := url.Values{"action": {"deny"}}
 	denyReq, _ := http.NewRequest(http.MethodPost, buildAuthURL(srv.URL, nil),
 		strings.NewReader(consentForm.Encode()))
 	denyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -381,8 +327,6 @@ func TestOAuth2Auth_Post_Deny_ReturnsError(t *testing.T) {
 		defer denyResp.Body.Close()
 	}
 
-	// Assert — callback URL must NOT contain a code parameter.
-	// It must contain an error parameter instead.
 	var callbackURL string
 	if denyResp != nil {
 		callbackURL = denyResp.Header.Get("Location")
@@ -688,52 +632,14 @@ func TestOAuth2Token_Post_IDToken_Claims(t *testing.T) {
 // Internal test utilities
 // ---------------------------------------------------------------------------
 
-// obtainAuthorizationCode drives a complete consent flow and returns the
+// obtainAuthorizationCode drives the auto-approve flow and returns the
 // authorization code from the callback redirect URL.
 func obtainAuthorizationCode(t *testing.T, srvURL string) string {
 	t.Helper()
 
-	client, transport := testhelper.NewTestClient(t)
-	_ = transport
+	client, _ := loginAndGetClient(t, srvURL)
 
-	// Step 1: log in
-	loginForm := url.Values{
-		"username": {"admin@test.local"},
-		"password": {"test-password"},
-	}
-	loginReq, err := http.NewRequest(http.MethodPost, srvURL+"/login",
-		strings.NewReader(loginForm.Encode()))
-	if err != nil {
-		t.Fatalf("obtainAuthorizationCode: login request: %v", err)
-	}
-	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	loginResp, err := client.Do(loginReq)
-	if err != nil {
-		t.Fatalf("obtainAuthorizationCode: POST /login: %v", err)
-	}
-	loginResp.Body.Close()
-
-	// Step 2: GET /oauth2/auth — retrieve challenge from consent page
-	getResp, err := client.Get(buildAuthURL(srvURL, nil))
-	if err != nil {
-		t.Fatalf("obtainAuthorizationCode: GET /oauth2/auth: %v", err)
-	}
-	pageBody, err := io.ReadAll(getResp.Body)
-	getResp.Body.Close()
-	if err != nil {
-		t.Fatalf("obtainAuthorizationCode: io.ReadAll: %v", err)
-	}
-	if getResp.StatusCode != http.StatusOK {
-		t.Fatalf("obtainAuthorizationCode: GET /oauth2/auth status = %d, want 200; body = %.300s",
-			getResp.StatusCode, pageBody)
-	}
-
-	challenge := extractHiddenInputValue(string(pageBody), "challenge")
-	if challenge == "" {
-		t.Fatalf("obtainAuthorizationCode: no challenge in consent page; body = %.300s", pageBody)
-	}
-
-	// Step 3: POST /oauth2/auth with approve — stop before the callback redirect
+	// Use a client that stops before following external redirects
 	stopClient := &http.Client{
 		Jar: client.Jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -747,38 +653,19 @@ func obtainAuthorizationCode(t *testing.T, srvURL string) string {
 		},
 	}
 
-	consentForm := url.Values{
-		"action":    {"approve"},
-		"challenge": {challenge},
-	}
-	consentReq, err := http.NewRequest(http.MethodPost, buildAuthURL(srvURL, nil),
-		strings.NewReader(consentForm.Encode()))
+	// GET /oauth2/auth — auto-approve redirects to callback with code
+	resp, err := stopClient.Get(buildAuthURL(srvURL, nil))
 	if err != nil {
-		t.Fatalf("obtainAuthorizationCode: consent request: %v", err)
+		t.Fatalf("obtainAuthorizationCode: GET /oauth2/auth: %v", err)
 	}
-	consentReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, c := range client.Jar.Cookies(mustParseURL(t, srvURL)) {
-		consentReq.AddCookie(c)
-	}
+	resp.Body.Close()
 
-	consentResp, err := stopClient.Do(consentReq)
-	if err != nil && !strings.Contains(err.Error(), "use last response") {
-		t.Fatalf("obtainAuthorizationCode: POST /oauth2/auth: %v", err)
-	}
-	if consentResp != nil {
-		consentResp.Body.Close()
-	}
-
-	// Extract the authorization code from the callback Location header.
-	var callbackURL string
-	if consentResp != nil {
-		callbackURL = consentResp.Header.Get("Location")
-		if callbackURL == "" && consentResp.Request != nil {
-			callbackURL = consentResp.Request.URL.String()
-		}
+	callbackURL := resp.Header.Get("Location")
+	if callbackURL == "" && resp.Request != nil {
+		callbackURL = resp.Request.URL.String()
 	}
 	if callbackURL == "" {
-		t.Fatal("obtainAuthorizationCode: no callback URL found after consent approval")
+		t.Fatal("obtainAuthorizationCode: no callback URL found after auto-approve")
 	}
 
 	parsed, err := url.Parse(callbackURL)
@@ -791,34 +678,6 @@ func obtainAuthorizationCode(t *testing.T, srvURL string) string {
 		t.Fatalf("obtainAuthorizationCode: no code in callback URL %q", callbackURL)
 	}
 	return code
-}
-
-// extractHiddenInputValue finds a hidden <input name="..."> in html and
-// returns its value attribute. Returns "" when not found.
-func extractHiddenInputValue(html, name string) string {
-	needle := `name="` + name + `"`
-	idx := strings.Index(html, needle)
-	if idx == -1 {
-		return ""
-	}
-	sub := html[idx:]
-	endTag := strings.Index(sub, ">")
-	if endTag == -1 {
-		endTag = len(sub)
-	}
-	tagContent := sub[:endTag]
-
-	const valuePrefix = `value="`
-	vi := strings.Index(tagContent, valuePrefix)
-	if vi == -1 {
-		return ""
-	}
-	rest := tagContent[vi+len(valuePrefix):]
-	end := strings.Index(rest, `"`)
-	if end == -1 {
-		return rest
-	}
-	return rest[:end]
 }
 
 // decodeJWTPayload base64url-decodes the payload segment of a compact JWT

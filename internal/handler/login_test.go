@@ -281,7 +281,23 @@ func TestLoginHandler_SessionCookieMaintainsAuthState(t *testing.T) {
 		"state":         {"test-state"},
 		"nonce":         {"test-nonce-12345"},
 	}.Encode()
-	protectedResp, err := client.Get(authURL)
+
+	// Use a client that stops before following external redirects
+	stopClient := &http.Client{
+		Jar: client.Jar,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Stop before connecting to external callback URLs
+			if !strings.HasPrefix(req.URL.String(), srv.URL) {
+				return http.ErrUseLastResponse
+			}
+			if len(via) >= 10 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	protectedResp, err := stopClient.Get(authURL)
 	if err != nil {
 		t.Fatalf("GET /oauth2/auth: %v", err)
 	}
@@ -294,8 +310,9 @@ func TestLoginHandler_SessionCookieMaintainsAuthState(t *testing.T) {
 
 	// Assert — 인증된 사용자는 /login 페이지로 리다이렉트되지 않아야 한다
 	// (최종 URL이 /login이면 인증이 유지되지 않은 것)
-	finalURL := protectedResp.Request.URL.Path
-	if strings.HasSuffix(finalURL, "/login") {
+	// With auto-approve, the server redirects to callback (302) which is correct behaviour.
+	finalURL := protectedResp.Request.URL.String()
+	if strings.Contains(finalURL, "/login") {
 		t.Errorf("GET /oauth2/auth redirected to %q after login, session cookie is not maintained", finalURL)
 	}
 }

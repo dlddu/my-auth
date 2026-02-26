@@ -2,8 +2,6 @@ package handler
 
 import (
 	"database/sql"
-	"fmt"
-	"html/template"
 	"net/http"
 	"net/url"
 
@@ -12,44 +10,14 @@ import (
 	"github.com/dlddu/my-auth/internal/config"
 )
 
-// oauthTemplates holds the parsed consent page templates.
-// Initialised in init() alongside loginTemplates.
-var oauthTemplates *template.Template
-
-func init() {
-	tmpl, err := template.ParseFS(templateFS, "templates/base.html", "templates/consent.html")
-	if err != nil {
-		panic(fmt.Sprintf("handler: parse consent templates: %v", err))
-	}
-	oauthTemplates = tmpl
-}
-
-// consentPageData holds the data rendered into consent.html.
-type consentPageData struct {
-	// ClientName is the human-readable name of the OAuth2 client.
-	ClientName string
-	// ClientDomain is the primary domain of the client application.
-	ClientDomain string
-	// Scopes is the list of OAuth2 scopes the client is requesting.
-	Scopes []string
-	// Challenge is an opaque value that carries the fosite authorize request
-	// across the GET → POST consent round-trip.
-	Challenge string
-	// QueryString is the raw query string from the original GET /oauth2/auth
-	// request. It is appended to the consent form's POST action so that fosite
-	// can re-parse the OAuth2 parameters (response_type, client_id, etc.) from
-	// r.URL.Query() when handling the POST.
-	QueryString string
-}
-
 // NewOAuth2AuthHandler returns an http.HandlerFunc that handles both the
 // GET and POST /oauth2/auth endpoints.
 //
 // GET  /oauth2/auth  — fosite authorise request validation; redirect to /login
 //
-//	if the user is unauthenticated; render consent page otherwise.
+//	if the user is unauthenticated; auto-approve and redirect to callback otherwise.
 //
-// POST /oauth2/auth  — consent form submission (approve / deny).
+// POST /oauth2/auth  — consent form submission fallback (approve / deny).
 func NewOAuth2AuthHandler(cfg *config.Config, db *sql.DB, provider fosite.OAuth2Provider) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -68,45 +36,43 @@ func NewOAuth2AuthHandler(cfg *config.Config, db *sql.DB, provider fosite.OAuth2
 // invalid client_id or redirect_uri mismatches receive proper RFC 6749
 // error responses before any authentication check. If the request is
 // valid, unauthenticated users are redirected to /login with the full
-// query string preserved so the flow can resume after login.
+// query string preserved so the flow can resume after login. Authenticated
+// users are auto-approved since this is a single-owner OAuth2 server.
 func handleOAuth2AuthGet(w http.ResponseWriter, r *http.Request, cfg *config.Config, db *sql.DB, provider fosite.OAuth2Provider) {
-	// Validate the OAuth2 request parameters first. This ensures that
-	// invalid client_id or redirect_uri mismatches return proper 4xx
-	// errors rather than falling through to the login redirect.
 	ctx := r.Context()
+
+	// Validate the OAuth2 request parameters first.
 	authReq, err := provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
 		provider.WriteAuthorizeError(ctx, w, authReq, err)
 		return
 	}
 
-	// Redirect unauthenticated users to login, preserving the full query
-	// string so the OAuth2 flow can resume after successful authentication.
+	// Redirect unauthenticated users to login.
 	if !IsAuthenticated(r, db, cfg.SessionSecret) {
 		returnTo := "/oauth2/auth?" + r.URL.RawQuery
 		http.Redirect(w, r, "/login?return_to="+url.QueryEscape(returnTo), http.StatusFound)
 		return
 	}
 
-	// challenge 값을 폼에 포함시켜 POST 단계에서 fosite 요청을 복원할 수 있도록 한다.
-	challenge := authReq.GetID()
-
-	// 요청된 스코프 목록을 렌더링용으로 변환한다.
-	scopes := []string(authReq.GetRequestedScopes())
-
-	data := consentPageData{
-		ClientName:   authReq.GetClient().GetID(),
-		ClientDomain: "",
-		Scopes:       scopes,
-		Challenge:    challenge,
-		QueryString:  r.URL.RawQuery,
+	// Auto-approve: single-owner server — grant all requested scopes.
+	for _, scope := range authReq.GetRequestedScopes() {
+		authReq.GrantScope(scope)
+	}
+	for _, audience := range authReq.GetRequestedAudience() {
+		authReq.GrantAudience(audience)
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	if err := oauthTemplates.ExecuteTemplate(w, "base", data); err != nil {
-		_ = err
+	subject := getSubjectFromSession(r, db, cfg.SessionSecret)
+	mySession := newFositeSession(subject, cfg.Issuer)
+
+	resp, err := provider.NewAuthorizeResponse(ctx, authReq, mySession)
+	if err != nil {
+		provider.WriteAuthorizeError(ctx, w, authReq, err)
+		return
 	}
+
+	provider.WriteAuthorizeResponse(ctx, w, authReq, resp)
 }
 
 // handleOAuth2AuthPost processes POST /oauth2/auth (consent form submission).
@@ -118,9 +84,6 @@ func handleOAuth2AuthPost(w http.ResponseWriter, r *http.Request, cfg *config.Co
 
 	action := r.FormValue("action")
 
-	// fosite で authorize request を再構築する。
-	// 実装フェーズでは challenge から復元するが、ここではスタブとして
-	// NewAuthorizeRequest を再度呼び出す。
 	ctx := r.Context()
 	authReq, err := provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
@@ -129,12 +92,10 @@ func handleOAuth2AuthPost(w http.ResponseWriter, r *http.Request, cfg *config.Co
 	}
 
 	if action != "approve" {
-		// ユーザーが拒否した場合はエラーを返す。
 		provider.WriteAuthorizeError(ctx, w, authReq, fosite.ErrAccessDenied)
 		return
 	}
 
-	// ユーザーが承認した: スコープを付与して authorization code を発行する。
 	for _, scope := range authReq.GetRequestedScopes() {
 		authReq.GrantScope(scope)
 	}
@@ -143,7 +104,6 @@ func handleOAuth2AuthPost(w http.ResponseWriter, r *http.Request, cfg *config.Co
 		authReq.GrantAudience(audience)
 	}
 
-	// 認証済みユーザーのサブジェクトを取得する。
 	subject := getSubjectFromSession(r, db, cfg.SessionSecret)
 	mySession := newFositeSession(subject, cfg.Issuer)
 
