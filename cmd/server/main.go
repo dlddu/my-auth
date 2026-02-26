@@ -3,8 +3,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/rsa"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -55,13 +57,12 @@ func main() {
 	}
 
 	// 3. 데이터베이스 열기
-	db, err := database.Open("file:my-auth.db?_journal_mode=WAL&_foreign_keys=ON")
+	db, err := database.Open("file:my-auth.db")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "my-auth: open database: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
-
 	migrationsDir := "migrations"
 	if err := database.Migrate(db, migrationsDir); err != nil {
 		fmt.Fprintf(os.Stderr, "my-auth: migrate database: %v\n", err)
@@ -117,8 +118,16 @@ func buildFositeProvider(cfg *config.Config, key *rsa.PrivateKey, db *sql.DB) fo
 	// Derive a stable global secret from the session secret.
 	// Minimum 32 bytes required by fosite's HMAC strategy.
 	globalSecret := cfg.SessionSecret
+	if globalSecret == "" {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			fmt.Fprintf(os.Stderr, "my-auth: generate session secret: %v\n", err)
+			os.Exit(1)
+		}
+		globalSecret = hex.EncodeToString(b)
+	}
 	for len(globalSecret) < 32 {
-		globalSecret += cfg.SessionSecret
+		globalSecret += globalSecret
 	}
 
 	fositeConfig := &fosite.Config{
@@ -148,8 +157,7 @@ func buildFositeProvider(cfg *config.Config, key *rsa.PrivateKey, db *sql.DB) fo
 			GetPrivateKey: keyGetter,
 		},
 	}
-
-	return compose.Compose(
+	provider := compose.Compose(
 		fositeConfig,
 		store,
 		strategy,
@@ -157,4 +165,5 @@ func buildFositeProvider(cfg *config.Config, key *rsa.PrivateKey, db *sql.DB) fo
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
 	)
+	return provider
 }
