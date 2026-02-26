@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/dlddu/my-auth/internal/config"
+	"github.com/dlddu/my-auth/internal/database"
 	"github.com/dlddu/my-auth/internal/handler"
 	"github.com/dlddu/my-auth/internal/keygen"
 )
@@ -45,7 +46,21 @@ func main() {
 		}
 	}
 
-	// 3. 라우터 설정
+	// 3. 데이터베이스 열기
+	db, err := database.Open("file:my-auth.db?_journal_mode=WAL&_foreign_keys=ON")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "my-auth: open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	migrationsDir := filepath.Join(filepath.Dir(os.Args[0]), "migrations")
+	if err := database.Migrate(db, migrationsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "my-auth: migrate database: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 4. 라우터 설정
 	r := chi.NewRouter()
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +72,21 @@ func main() {
 	r.Get("/.well-known/openid-configuration", handler.NewOIDCDiscoveryHandler(cfg.Issuer))
 	r.Get("/jwks", handler.NewJWKSHandler(privateKey))
 
-	// 4. 서버 시작
+	loginHandler := handler.NewLoginHandler(cfg, db)
+	r.Get("/login", loginHandler)
+	r.Post("/login", loginHandler)
+
+	r.Get("/oauth2/auth", func(w http.ResponseWriter, r *http.Request) {
+		if !handler.IsAuthenticated(r, db, cfg.SessionSecret) {
+			http.Redirect(w, r, "/login?return_to=/oauth2/auth", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("authorized"))
+	})
+
+	// 5. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	fmt.Fprintf(os.Stdout, "my-auth: listening on %s\n", addr)
 

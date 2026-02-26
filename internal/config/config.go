@@ -17,10 +17,11 @@ type OwnerCredentials struct {
 
 // Config holds all application configuration values loaded from config.yaml.
 type Config struct {
-	Issuer     string           `yaml:"issuer"`
-	Port       int              `yaml:"port"`
-	Owner      OwnerCredentials `yaml:"owner"`
-	JWTKeyPath string           `yaml:"jwt_key_path"`
+	Issuer        string           `yaml:"issuer"`
+	Port          int              `yaml:"port"`
+	Owner         OwnerCredentials `yaml:"owner"`
+	JWTKeyPath    string           `yaml:"jwt_key_path"`
+	SessionSecret string           `yaml:"session_secret"`
 }
 
 // Load reads and parses a YAML configuration file from the given path.

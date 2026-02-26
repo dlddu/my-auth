@@ -14,9 +14,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestNewTestDB_CreatesAndCleansUp(t *testing.T) {
-	// TODO: Activate when DLD-579 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange — capture the DSN before the test's sub-cleanup runs.
 	var capturedDSN string
 
@@ -46,9 +43,6 @@ func TestNewTestDB_CreatesAndCleansUp(t *testing.T) {
 }
 
 func TestNewTestDB_AppliesMigrations(t *testing.T) {
-	// TODO: Activate when DLD-579 is implemented
-	t.Skip("not implemented yet")
-
 	// Act
 	dsn := testhelper.NewTestDB(t)
 

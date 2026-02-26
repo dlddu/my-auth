@@ -13,9 +13,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestNewTestClient_MaintainsCookies(t *testing.T) {
-	// TODO: Activate when DLD-579 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange — a minimal server that sets a cookie on the first request and
 	// echoes whether the cookie was present on subsequent requests.
 	cookieName := "session"
@@ -61,9 +58,6 @@ func TestNewTestClient_MaintainsCookies(t *testing.T) {
 }
 
 func TestNewTestClient_TracksRedirects(t *testing.T) {
-	// TODO: Activate when DLD-579 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange — a server that performs a single redirect:
 	//   /start  → 302 → /end
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

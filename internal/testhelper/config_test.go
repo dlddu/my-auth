@@ -12,9 +12,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestNewTestConfig_ReturnsValidConfig(t *testing.T) {
-	// TODO: Activate when DLD-579 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
 
@@ -33,9 +30,6 @@ func TestNewTestConfig_ReturnsValidConfig(t *testing.T) {
 }
 
 func TestNewTestConfig_UsesProvidedDBPath(t *testing.T) {
-	// TODO: Activate when DLD-579 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange — two different DSNs.
 	dsn1 := testhelper.NewTestDB(t)
 

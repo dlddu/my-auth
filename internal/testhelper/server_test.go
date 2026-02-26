@@ -13,9 +13,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestNewTestServer_StartsAndStops(t *testing.T) {
-	// TODO: Activate when DLD-579 is implemented
-	t.Skip("not implemented yet")
-
 	// Act
 	srv, _ := testhelper.NewTestServer(t)
 
@@ -40,9 +37,6 @@ func TestNewTestServer_StartsAndStops(t *testing.T) {
 }
 
 func TestNewTestServer_RespondsToRequests(t *testing.T) {
-	// TODO: Activate when DLD-579 is implemented
-	t.Skip("not implemented yet")
-
 	// Arrange
 	srv, client := testhelper.NewTestServer(t)
 
