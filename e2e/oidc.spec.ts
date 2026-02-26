@@ -128,10 +128,7 @@ test.describe("GET /jwks", () => {
     const privateFields = ["d", "p", "q", "dp", "dq", "qi"];
     for (const key of body.keys) {
       for (const field of privateFields) {
-        expect(key).not.toHaveProperty(
-          field,
-          `RSA key (kid=${key.kid}) must not expose private field "${field}"`
-        );
+        expect(key).not.toHaveProperty(field);
       }
     }
   });
@@ -158,10 +155,7 @@ test.describe("JWKS public key usability for JWT signature verification", () => 
     const requiredFields = ["n", "e", "kty", "kid", "use", "alg"];
     for (const key of rsaKeys) {
       for (const field of requiredFields) {
-        expect(key).toHaveProperty(
-          field,
-          `RSA key must have required field "${field}"`
-        );
+        expect(key).toHaveProperty(field);
         expect((key as Record<string, unknown>)[field]).toBeTruthy();
       }
     }
