@@ -9,6 +9,7 @@ import (
 	"github.com/dlddu/my-auth/internal/testhelper"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/openid"
+	"github.com/ory/fosite/token/jwt"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,7 @@ import (
 func newTestAuthorizeRequest(clientID, requestID string) fosite.Requester {
 	session := &openid.DefaultSession{
 		Subject: "user@test.local",
-		Claims: &openid.IDTokenClaims{
+		Claims: &jwt.IDTokenClaims{
 			Issuer:    "https://auth.test.local",
 			Subject:   "user@test.local",
 			Audience:  []string{clientID},
@@ -32,8 +33,8 @@ func newTestAuthorizeRequest(clientID, requestID string) fosite.Requester {
 	req := fosite.NewAuthorizeRequest()
 	req.ID = requestID
 	req.RequestedAt = time.Now()
-	req.GrantedScopes = fosite.Arguments{"openid", "profile"}
-	req.RequestedScopes = fosite.Arguments{"openid", "profile"}
+	req.GrantedScope = fosite.Arguments{"openid", "profile"}
+	req.RequestedScope = fosite.Arguments{"openid", "profile"}
 	req.Client = &fosite.DefaultClient{
 		ID:            clientID,
 		Secret:        []byte("test-secret"),

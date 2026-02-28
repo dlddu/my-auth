@@ -7,6 +7,7 @@ import (
 
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/openid"
+	"github.com/ory/fosite/token/jwt"
 )
 
 // requestData is the JSON-serializable form of a fosite.Requester.
@@ -23,11 +24,11 @@ type requestData struct {
 
 // oidcSessionData holds the serializable fields of openid.DefaultSession.
 type oidcSessionData struct {
-	Subject string         `json:"subject"`
+	Subject string          `json:"subject"`
 	Claims  *oidcClaimsData `json:"claims,omitempty"`
 }
 
-// oidcClaimsData holds the serializable fields of openid.IDTokenClaims.
+// oidcClaimsData holds the serializable fields of jwt.IDTokenClaims.
 type oidcClaimsData struct {
 	Issuer                              string                 `json:"iss,omitempty"`
 	Subject                             string                 `json:"sub,omitempty"`
@@ -104,7 +105,7 @@ func deserializeRequest(data []byte, sessionContainer fosite.Session, _ *ClientS
 			oidcSess.Subject = rd.Session.Subject
 			if rd.Session.Claims != nil {
 				if oidcSess.Claims == nil {
-					oidcSess.Claims = &openid.IDTokenClaims{}
+					oidcSess.Claims = &jwt.IDTokenClaims{}
 				}
 				oidcSess.Claims.Issuer = rd.Session.Claims.Issuer
 				oidcSess.Claims.Subject = rd.Session.Claims.Subject
@@ -124,11 +125,11 @@ func deserializeRequest(data []byte, sessionContainer fosite.Session, _ *ClientS
 	}
 
 	req := &fosite.Request{
-		ID:              rd.ID,
-		RequestedAt:     rd.RequestedAt,
-		RequestedScopes: fosite.Arguments(rd.Scopes),
-		GrantedScopes:   fosite.Arguments(rd.GrantedScopes),
-		Session:         sessionContainer,
+		ID:             rd.ID,
+		RequestedAt:    rd.RequestedAt,
+		RequestedScope: fosite.Arguments(rd.Scopes),
+		GrantedScope:   fosite.Arguments(rd.GrantedScopes),
+		Session:        sessionContainer,
 		// Re-attach a minimal client representation so GetClient().GetID() works.
 		Client: &fosite.DefaultClient{ID: rd.ClientID},
 	}

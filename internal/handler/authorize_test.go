@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -63,7 +64,7 @@ func insertOAuthClient(t *testing.T, dsn string) {
 
 // loginAndGetCookieClient performs a POST /login with valid credentials and
 // returns a cookie-preserving http.Client that is already authenticated.
-func loginAndGetCookieClient(t *testing.T, srv interface{ URL string }) *http.Client {
+func loginAndGetCookieClient(t *testing.T, srv *httptest.Server) *http.Client {
 	t.Helper()
 
 	client, _ := testhelper.NewTestClient(t)

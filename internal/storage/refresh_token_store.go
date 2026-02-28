@@ -25,7 +25,7 @@ func NewRefreshTokenStore(db *sql.DB) *RefreshTokenStore {
 }
 
 // CreateRefreshTokenSession persists a refresh token session.
-func (s *RefreshTokenStore) CreateRefreshTokenSession(ctx context.Context, signature string, req fosite.Requester) error {
+func (s *RefreshTokenStore) CreateRefreshTokenSession(ctx context.Context, signature string, _ string, req fosite.Requester) error {
 	data, err := serializeRequest(req)
 	if err != nil {
 		return fmt.Errorf("storage: CreateRefreshTokenSession: %w", err)
@@ -73,7 +73,7 @@ func (s *RefreshTokenStore) GetRefreshTokenSession(ctx context.Context, signatur
 	}
 
 	if revoked == 1 {
-		return nil, fmt.Errorf("storage: GetRefreshTokenSession: %w", fosite.ErrTokenRevoked)
+		return nil, fmt.Errorf("storage: GetRefreshTokenSession: %w", fosite.ErrInactiveToken)
 	}
 
 	req, err := deserializeRequest([]byte(sessionData), session, s.clientStore)
@@ -110,4 +110,19 @@ func (s *RefreshTokenStore) RevokeRefreshToken(ctx context.Context, requestID st
 // This implementation delegates to RevokeRefreshToken.
 func (s *RefreshTokenStore) RevokeRefreshTokenMaybeGracePeriod(ctx context.Context, requestID string, signature string) error {
 	return s.RevokeRefreshToken(ctx, requestID)
+}
+
+// RotateRefreshToken implements oauth2.RefreshTokenStorage.
+// It revokes the old refresh token identified by refreshTokenSignature so that
+// only the newly issued token (created in the same request) remains valid.
+func (s *RefreshTokenStore) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE refresh_tokens SET revoked = 1
+		 WHERE request_id = ? AND signature != ?`,
+		requestID, refreshTokenSignature,
+	)
+	if err != nil {
+		return fmt.Errorf("storage: RotateRefreshToken: %w", err)
+	}
+	return nil
 }

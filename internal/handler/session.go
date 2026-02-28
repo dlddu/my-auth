@@ -5,6 +5,7 @@ import (
 
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/openid"
+	"github.com/ory/fosite/token/jwt"
 )
 
 // newOIDCSession creates an openid.DefaultSession for a successfully authenticated user.
@@ -14,7 +15,7 @@ func newOIDCSession(subject, clientID, issuer string, ar fosite.AuthorizeRequest
 
 	sess := &openid.DefaultSession{
 		Subject: subject,
-		Claims: &openid.IDTokenClaims{
+		Claims: &jwt.IDTokenClaims{
 			Issuer:      issuer,
 			Subject:     subject,
 			Audience:    []string{clientID},
@@ -22,7 +23,7 @@ func newOIDCSession(subject, clientID, issuer string, ar fosite.AuthorizeRequest
 			ExpiresAt:   now.Add(time.Hour),
 			RequestedAt: now,
 		},
-		Headers: &openid.Headers{},
+		Headers: &jwt.Headers{},
 	}
 
 	// Carry the nonce from the authorize request into the session.
@@ -43,7 +44,7 @@ func newOIDCSession(subject, clientID, issuer string, ar fosite.AuthorizeRequest
 // fosite will populate the fields from the stored session during token exchange.
 func newEmptyOIDCSession() *openid.DefaultSession {
 	return &openid.DefaultSession{
-		Claims:  &openid.IDTokenClaims{},
-		Headers: &openid.Headers{},
+		Claims:  &jwt.IDTokenClaims{},
+		Headers: &jwt.Headers{},
 	}
 }

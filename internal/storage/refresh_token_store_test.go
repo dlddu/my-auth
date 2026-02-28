@@ -25,7 +25,7 @@ func TestRefreshTokenStore_CreateAndGet_RoundTrip(t *testing.T) {
 	req := newTestAccessRequest("test-client", "req-rt-001")
 
 	// Act — create
-	err := store.CreateRefreshTokenSession(ctx, sig, req)
+	err := store.CreateRefreshTokenSession(ctx, sig, "", req)
 	if err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRefreshTokenStore_Delete_RemovesToken(t *testing.T) {
 	sig := "delete-refresh-sig"
 	req := newTestAccessRequest("test-client", "req-rt-002")
 
-	if err := store.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, sig, "", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 
@@ -117,10 +117,10 @@ func TestRefreshTokenStore_RevokeRefreshToken_ByRequestID(t *testing.T) {
 	req1 := newTestAccessRequest("test-client", requestID)
 	req2 := newTestAccessRequest("test-client", requestID)
 
-	if err := store.CreateRefreshTokenSession(ctx, sig1, req1); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, sig1, "", req1); err != nil {
 		t.Fatalf("CreateRefreshTokenSession (sig1): %v", err)
 	}
-	if err := store.CreateRefreshTokenSession(ctx, sig2, req2); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, sig2, "", req2); err != nil {
 		t.Fatalf("CreateRefreshTokenSession (sig2): %v", err)
 	}
 
@@ -173,7 +173,7 @@ func TestRefreshTokenStore_GetSession_PreservesGrantedScopes(t *testing.T) {
 	sig := "scope-refresh-sig"
 	req := newTestAccessRequest("test-client", "req-rt-003")
 
-	if err := store.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, sig, "", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 

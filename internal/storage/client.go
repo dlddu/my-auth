@@ -4,6 +4,7 @@ package storage
 
 import (
 	"context"
+	"time"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -112,4 +113,18 @@ func (cs *ClientStore) GetClient(ctx context.Context, id string) (fosite.Client,
 		scopes:        fosite.Arguments(scopeList),
 		public:        false,
 	}, nil
+}
+
+// ClientAssertionJWTValid returns nil if the JTI has not been used before,
+// or an error if it is already known (replay protection).
+// This implementation is a no-op stub — JWT assertion replay protection
+// requires persistent storage of JTIs, which is beyond the current scope.
+func (cs *ClientStore) ClientAssertionJWTValid(_ context.Context, _ string) error {
+	return nil
+}
+
+// SetClientAssertionJWT marks a JTI as known to prevent token replay.
+// This implementation is a no-op stub.
+func (cs *ClientStore) SetClientAssertionJWT(_ context.Context, _ string, _ time.Time) error {
+	return nil
 }

@@ -107,7 +107,7 @@ func handleAuthorizeGet(w http.ResponseWriter, r *http.Request, cfg *config.Conf
 	// Parse the OAuth2 authorize request.
 	ar, err := provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
-		provider.WriteAuthorizeError(w, ar, err)
+		provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
 
@@ -143,13 +143,13 @@ func handleAuthorizePost(w http.ResponseWriter, r *http.Request, cfg *config.Con
 	// Re-parse the authorize request from the form data.
 	ar, err := provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
-		provider.WriteAuthorizeError(w, ar, err)
+		provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
 
 	action := r.FormValue("action")
 	if action == "deny" {
-		provider.WriteAuthorizeError(w, ar, fosite.ErrAccessDenied)
+		provider.WriteAuthorizeError(ctx, w, ar, fosite.ErrAccessDenied)
 		return
 	}
 
@@ -174,11 +174,11 @@ func handleAuthorizePost(w http.ResponseWriter, r *http.Request, cfg *config.Con
 	// Create the authorize response (issues the code, stores session).
 	resp, err := provider.NewAuthorizeResponse(ctx, ar, mySession)
 	if err != nil {
-		provider.WriteAuthorizeError(w, ar, err)
+		provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
 
-	provider.WriteAuthorizeResponse(w, ar, resp)
+	provider.WriteAuthorizeResponse(ctx, w, ar, resp)
 }
 
 // NewTokenHandler returns an http.HandlerFunc that handles POST /oauth2/token.
@@ -191,16 +191,16 @@ func NewTokenHandler(provider fosite.OAuth2Provider) http.HandlerFunc {
 
 		ar, err := provider.NewAccessRequest(ctx, r, mySession)
 		if err != nil {
-			provider.WriteAccessError(w, ar, err)
+			provider.WriteAccessError(ctx, w, ar, err)
 			return
 		}
 
 		resp, err := provider.NewAccessResponse(ctx, ar)
 		if err != nil {
-			provider.WriteAccessError(w, ar, err)
+			provider.WriteAccessError(ctx, w, ar, err)
 			return
 		}
 
-		provider.WriteAccessResponse(w, ar, resp)
+		provider.WriteAccessResponse(ctx, w, ar, resp)
 	}
 }

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -12,8 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
-	"github.com/ory/fosite/handler/openid"
-	"github.com/ory/fosite/token/jwt"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dlddu/my-auth/internal/config"
@@ -93,21 +92,18 @@ func main() {
 		AudienceMatchingStrategy:   fosite.DefaultAudienceMatchingStrategy,
 	}
 
-	jwtStrategy := &jwt.RS256JWTStrategy{
-		PrivateKey: privateKey,
+	// keyGetter returns the RSA private key for JWT signing.
+	keyGetter := func(_ context.Context) (interface{}, error) {
+		return privateKey, nil
 	}
-
-	oidcStrategy := openid.NewDefaultStrategy(jwtStrategy, fositeConfig)
 
 	provider := compose.Compose(
 		fositeConfig,
 		store,
 		&compose.CommonStrategy{
 			CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConfig),
-			OpenIDConnectTokenStrategy: oidcStrategy,
-			Signer:                     jwtStrategy,
+			OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyGetter, fositeConfig),
 		},
-		nil,
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,

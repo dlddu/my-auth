@@ -12,6 +12,7 @@ type Store struct {
 	*AccessTokenStore
 	*RefreshTokenStore
 	*OpenIDConnectSessionStore
+	*PKCEStore
 }
 
 // NewStore creates a Store that wraps all individual store implementations.
@@ -23,5 +24,6 @@ func NewStore(db *sql.DB) *Store {
 		AccessTokenStore:          NewAccessTokenStore(db),
 		RefreshTokenStore:         NewRefreshTokenStore(db),
 		OpenIDConnectSessionStore: NewOpenIDConnectSessionStore(db),
+		PKCEStore:                 NewPKCEStore(db),
 	}
 }
