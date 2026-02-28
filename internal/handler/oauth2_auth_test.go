@@ -106,7 +106,7 @@ func TestGetOAuth2Auth_UnauthenticatedRedirect_HasReturnToParam(t *testing.T) {
 	}
 
 	// Act
-	resp, err := noRedirectClient.Get(srv.URL + "/oauth2/auth?client_id=test-client&response_type=code")
+	resp, err := noRedirectClient.Get(srv.URL + "/oauth2/auth?client_id=test-client&response_type=code&state=test-state-value&redirect_uri=http%3A%2F%2Flocalhost%3A9999%2Fcallback&scope=openid")
 	if err != nil {
 		t.Fatalf("GET /oauth2/auth: %v", err)
 	}

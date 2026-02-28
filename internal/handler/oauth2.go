@@ -26,6 +26,9 @@ import (
 	"github.com/dlddu/my-auth/internal/storage"
 )
 
+// Ensure storage.CombinedSession satisfies the fosite.Session interface at compile time.
+var _ fosite.Session = (*storage.CombinedSession)(nil)
+
 // consentTemplates is the parsed consent page template set.
 var consentTemplates *template.Template
 
@@ -64,6 +67,7 @@ func NewOAuth2Provider(store *storage.Store, privateKey *rsa.PrivateKey, issuer 
 		AuthorizeCodeLifespan:      10 * time.Minute,
 		IDTokenLifespan:            time.Hour,
 		IDTokenIssuer:              issuer,
+		AccessTokenIssuer:          issuer,
 		RefreshTokenLifespan:       24 * time.Hour,
 		RefreshTokenScopes:         []string{},
 		ScopeStrategy:              fosite.HierarchicScopeStrategy,
@@ -76,8 +80,10 @@ func NewOAuth2Provider(store *storage.Store, privateKey *rsa.PrivateKey, issuer 
 		return privateKey, nil
 	}
 
+	hmacStrategy := compose.NewOAuth2HMACStrategy(fositeConfig)
+	jwtStrategy := compose.NewOAuth2JWTStrategy(keyGetter, hmacStrategy, fositeConfig)
 	strategy := &compose.CommonStrategy{
-		CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConfig),
+		CoreStrategy:               jwtStrategy,
 		OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyGetter, fositeConfig),
 		Signer:                     &jwt.DefaultSigner{GetPrivateKey: keyGetter},
 	}
@@ -105,38 +111,49 @@ func NewOAuth2Handlers(provider fosite.OAuth2Provider, cfg *config.Config, db *s
 // AuthorizeHandler handles GET and POST /oauth2/auth.
 func (h *OAuth2Handlers) AuthorizeHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !IsAuthenticated(r, h.db, h.cfg.SessionSecret) {
-			// Preserve the full request URL as return_to so the user comes back
-			// to the exact authorization request after login.
-			returnTo := "/oauth2/auth"
-			if r.URL.RawQuery != "" {
-				returnTo = "/oauth2/auth?" + r.URL.RawQuery
+		ctx := r.Context()
+
+		// For GET requests, validate OAuth2 parameters first so invalid
+		// client_id / redirect_uri are rejected immediately per RFC 6749 §4.1.2.1.
+		if r.Method == http.MethodGet {
+			ar, err := h.provider.NewAuthorizeRequest(ctx, r)
+			if err != nil {
+				h.provider.WriteAuthorizeError(ctx, w, ar, err)
+				return
 			}
-			http.Redirect(w, r, "/login?return_to="+url.QueryEscape(returnTo), http.StatusFound)
+			// OAuth2 params are valid — check authentication.
+			if !IsAuthenticated(r, h.db, h.cfg.SessionSecret) {
+				returnTo := "/oauth2/auth"
+				if r.URL.RawQuery != "" {
+					returnTo = "/oauth2/auth?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, "/login?return_to="+url.QueryEscape(returnTo), http.StatusFound)
+				return
+			}
+			// Render consent page (ar is already parsed).
+			h.renderConsentPage(w, r, ar)
 			return
 		}
 
-		switch r.Method {
-		case http.MethodGet:
-			h.handleAuthorizeGet(w, r)
-		case http.MethodPost:
+		if r.Method == http.MethodPost {
+			if !IsAuthenticated(r, h.db, h.cfg.SessionSecret) {
+				returnTo := "/oauth2/auth"
+				if r.URL.RawQuery != "" {
+					returnTo = "/oauth2/auth?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, "/login?return_to="+url.QueryEscape(returnTo), http.StatusFound)
+				return
+			}
 			h.handleAuthorizePost(w, r)
-		default:
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
 		}
+
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-// handleAuthorizeGet renders the consent page for an authenticated user.
-func (h *OAuth2Handlers) handleAuthorizeGet(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	ar, err := h.provider.NewAuthorizeRequest(ctx, r)
-	if err != nil {
-		h.provider.WriteAuthorizeError(ctx, w, ar, err)
-		return
-	}
-
+// renderConsentPage renders the consent page for a validated, authenticated request.
+func (h *OAuth2Handlers) renderConsentPage(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester) {
 	client := ar.GetClient()
 	requestedScopes := ar.GetRequestedScopes()
 	redirectURIStr := r.URL.Query().Get("redirect_uri")
@@ -144,7 +161,6 @@ func (h *OAuth2Handlers) handleAuthorizeGet(w http.ResponseWriter, r *http.Reque
 	nonce := r.URL.Query().Get("nonce")
 	responseType := r.URL.Query().Get("response_type")
 
-	// Parse redirect domain for display.
 	redirectDomain := ""
 	if redirectURIStr != "" {
 		if u, err := url.Parse(redirectURIStr); err == nil {
@@ -204,19 +220,26 @@ func (h *OAuth2Handlers) handleAuthorizePost(w http.ResponseWriter, r *http.Requ
 	subject := h.getSubject(r)
 
 	now := time.Now()
-	mySession := &openid.DefaultSession{
-		Claims: &jwt.IDTokenClaims{
-			Issuer:      h.cfg.Issuer,
-			Subject:     subject,
-			Audience:    []string{ar.GetClient().GetID()},
-			IssuedAt:    now,
-			RequestedAt: now,
-			AuthTime:    now,
-			Nonce:       r.FormValue("nonce"),
-			ExpiresAt:   now.Add(time.Hour),
+	mySession := &storage.CombinedSession{
+		DefaultSession: &openid.DefaultSession{
+			Claims: &jwt.IDTokenClaims{
+				Issuer:      h.cfg.Issuer,
+				Subject:     subject,
+				Audience:    []string{ar.GetClient().GetID()},
+				IssuedAt:    now,
+				RequestedAt: now,
+				AuthTime:    now,
+				Nonce:       r.FormValue("nonce"),
+				ExpiresAt:   now.Add(time.Hour),
+			},
+			Headers: &jwt.Headers{},
+			Subject: subject,
 		},
-		Headers: &jwt.Headers{},
-		Subject: subject,
+		JWTClaims: &jwt.JWTClaims{
+			Subject: subject,
+			Issuer:  h.cfg.Issuer,
+		},
+		JWTHeader: &jwt.Headers{},
 	}
 
 	response, err := h.provider.NewAuthorizeResponse(ctx, ar, mySession)
@@ -233,7 +256,9 @@ func (h *OAuth2Handlers) TokenHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		mySession := &openid.DefaultSession{}
+		mySession := &storage.CombinedSession{
+			DefaultSession: openid.NewDefaultSession(),
+		}
 
 		accessRequest, err := h.provider.NewAccessRequest(ctx, r, mySession)
 		if err != nil {

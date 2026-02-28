@@ -23,6 +23,7 @@ import (
 	"github.com/ory/fosite"
 	oauth2storage "github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
+	"github.com/ory/fosite/token/jwt"
 )
 
 // Store is the SQLite-backed implementation of all fosite storage interfaces.
@@ -38,6 +39,59 @@ func New(db *sql.DB) (*Store, error) {
 		return nil, errors.New("storage.New: db must not be nil")
 	}
 	return &Store{db: db}, nil
+}
+
+// ---------------------------------------------------------------------------
+// CombinedSession
+// ---------------------------------------------------------------------------
+
+// CombinedSession embeds openid.DefaultSession (for OIDC id_token generation)
+// and adds JWTSessionContainer methods (for JWT access token generation).
+// It is defined here (in storage) to be shared with the handler package
+// without creating a circular import.
+type CombinedSession struct {
+	*openid.DefaultSession
+	JWTClaims *jwt.JWTClaims `json:"jwt_claims"`
+	JWTHeader *jwt.Headers   `json:"jwt_header"`
+}
+
+// GetJWTClaims implements oauth2.JWTSessionContainer.
+func (s *CombinedSession) GetJWTClaims() jwt.JWTClaimsContainer {
+	if s.JWTClaims == nil {
+		s.JWTClaims = &jwt.JWTClaims{}
+	}
+	return s.JWTClaims
+}
+
+// GetJWTHeader implements oauth2.JWTSessionContainer.
+func (s *CombinedSession) GetJWTHeader() *jwt.Headers {
+	if s.JWTHeader == nil {
+		s.JWTHeader = &jwt.Headers{}
+	}
+	return s.JWTHeader
+}
+
+// Clone implements fosite.Session.
+func (s *CombinedSession) Clone() fosite.Session {
+	if s == nil {
+		return nil
+	}
+	clonedDefault := s.DefaultSession.Clone().(*openid.DefaultSession)
+	var clonedClaims *jwt.JWTClaims
+	if s.JWTClaims != nil {
+		c := *s.JWTClaims
+		clonedClaims = &c
+	}
+	var clonedHeader *jwt.Headers
+	if s.JWTHeader != nil {
+		h := *s.JWTHeader
+		clonedHeader = &h
+	}
+	return &CombinedSession{
+		DefaultSession: clonedDefault,
+		JWTClaims:      clonedClaims,
+		JWTHeader:      clonedHeader,
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -108,12 +162,16 @@ func (s *Store) unmarshalRequest(ctx context.Context, data []byte) (*fosite.Requ
 		return nil, fmt.Errorf("storage: load client %q: %w", rd.ClientID, err)
 	}
 
-	// Deserialize the session as openid.DefaultSession (supports both basic and OIDC sessions).
-	sess := &openid.DefaultSession{}
+	// Deserialize the session as CombinedSession (supports both OIDC and JWT access token sessions).
+	sess := &CombinedSession{
+		DefaultSession: openid.NewDefaultSession(),
+	}
 	if len(rd.Session) > 0 && string(rd.Session) != "null" {
 		if err := json.Unmarshal(rd.Session, sess); err != nil {
 			// Fall back to an empty session if unmarshal fails.
-			sess = &openid.DefaultSession{}
+			sess = &CombinedSession{
+				DefaultSession: openid.NewDefaultSession(),
+			}
 		}
 	}
 
