@@ -2,12 +2,14 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
@@ -61,6 +63,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Seed test data if requested (for E2E testing in CI).
+	if os.Getenv("SEED_TEST_DATA") == "1" {
+		if err := seedTestData(db); err != nil {
+			fmt.Fprintf(os.Stderr, "my-auth: seed test data: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stdout, "my-auth: test data seeded")
+	}
+
 	// 4. 스토리지 및 OAuth2 프로바이더 생성
 	store, err := storage.New(db)
 	if err != nil {
@@ -107,4 +118,23 @@ func main() {
 		fmt.Fprintf(os.Stderr, "my-auth: server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// seedTestData inserts the canonical test OAuth2 client for E2E testing.
+func seedTestData(db *sql.DB) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.MinCost)
+	if err != nil {
+		return fmt.Errorf("bcrypt: %w", err)
+	}
+	_, err = db.Exec(`
+        INSERT OR IGNORE INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+		"test-client",
+		string(hash),
+		`["http://localhost:9999/callback"]`,
+		`["authorization_code","refresh_token"]`,
+		`["code"]`,
+		"openid profile email",
+	)
+	return err
 }

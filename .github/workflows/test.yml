@@ -79,7 +79,7 @@ jobs:
         # Run the built binary in the background. Playwright's webServer.url
         # probe will confirm the server is ready before tests start.
         # The process is terminated automatically when the job runner exits.
-        run: ./bin/my-auth &
+        run: SEED_TEST_DATA=1 ./bin/my-auth &
 
       - name: Run Playwright e2e tests
         # CI=true causes playwright.config.ts to set reuseExistingServer: false,
