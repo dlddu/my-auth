@@ -342,6 +342,178 @@ func TestAuthorizeHandler_PostApprove_RedirectsWithCode(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// E2E consent flow — approve redirects with authorization code
+// ---------------------------------------------------------------------------
+
+// TestConsentPost_ApproveRedirectsWithCode simulates the full consent page
+// approval flow end-to-end:
+//
+//  1. Login to obtain an authenticated session cookie.
+//  2. GET /oauth2/auth — the server redirects through /consent (following
+//     redirects automatically); verify the final URL contains "/consent".
+//  3. POST /consent?{same query string} with action=approve and verify a 303
+//     redirect to the client redirect_uri with a code= parameter.
+//  4. POST /consent?{same query string} with action=deny and verify a redirect
+//     with error=access_denied.
+func TestConsentPost_ApproveRedirectsWithCode(t *testing.T) {
+	// Arrange — start a test server and obtain an authenticated session cookie.
+	srv, _ := testhelper.NewTestServer(t)
+	authClient := loginAndGetCookieClient(t, srv)
+
+	// Step 2: GET /oauth2/auth; the authenticated client follows redirects
+	// (302 /oauth2/auth → 302 /consent → 200 consent page).
+	authorizeURL := buildAuthorizeURL(srv.URL, nil)
+	resp, err := authClient.Get(authorizeURL)
+	if err != nil {
+		t.Fatalf("GET /oauth2/auth: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	// The final URL after following redirects must be the consent page.
+	finalURL := resp.Request.URL
+	if !strings.Contains(finalURL.Path, "/consent") {
+		t.Fatalf("expected final URL to contain \"/consent\", got %q", finalURL.String())
+	}
+
+	// The consent page URL carries the same OAuth2 query string that was
+	// forwarded from /oauth2/auth → /consent.
+	consentQuery := finalURL.RawQuery
+
+	// Step 3: POST /consent?{query} with action=approve.
+	// Use a no-redirect client that shares the authenticated session cookie jar
+	// so the session cookie is sent with the POST.
+	noRedirectClient := &http.Client{
+		Jar: authClient.Jar,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	approveBody := strings.NewReader("action=approve")
+	approveReq, err := http.NewRequest(
+		http.MethodPost,
+		srv.URL+"/consent?"+consentQuery,
+		approveBody,
+	)
+	if err != nil {
+		t.Fatalf("POST /consent (approve): new request: %v", err)
+	}
+	approveReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	approveResp, err := noRedirectClient.Do(approveReq)
+	if err != nil {
+		t.Fatalf("POST /consent (approve): %v", err)
+	}
+	_ = approveResp.Body.Close()
+
+	// Assert — must be a redirect (303) to the client callback URI with code=.
+	if approveResp.StatusCode != http.StatusSeeOther {
+		t.Errorf("POST /consent (approve): status = %d, want %d (See Other)",
+			approveResp.StatusCode, http.StatusSeeOther)
+	}
+
+	approveLocation := approveResp.Header.Get("Location")
+	if !strings.Contains(approveLocation, "http://localhost:9999/callback") {
+		t.Errorf("POST /consent (approve): Location = %q, want it to contain the callback URI", approveLocation)
+	}
+	if !strings.Contains(approveLocation, "code=") {
+		t.Errorf("POST /consent (approve): Location = %q, want a \"code=\" parameter", approveLocation)
+	}
+
+	// Step 4: POST /consent?{query} with action=deny.
+	denyBody := strings.NewReader("action=deny")
+	denyReq, err := http.NewRequest(
+		http.MethodPost,
+		srv.URL+"/consent?"+consentQuery,
+		denyBody,
+	)
+	if err != nil {
+		t.Fatalf("POST /consent (deny): new request: %v", err)
+	}
+	denyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	denyResp, err := noRedirectClient.Do(denyReq)
+	if err != nil {
+		t.Fatalf("POST /consent (deny): %v", err)
+	}
+	_ = denyResp.Body.Close()
+
+	// Assert — deny must redirect with error=access_denied.
+	denyLocation := denyResp.Header.Get("Location")
+	if !strings.Contains(denyLocation, "error=access_denied") {
+		t.Errorf("POST /consent (deny): Location = %q, want \"error=access_denied\"", denyLocation)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// E2E consent flow — debug variant that logs the body on non-redirect response
+// ---------------------------------------------------------------------------
+
+// TestConsentPost_ApproveRedirectsWithCode_Body is identical to
+// TestConsentPost_ApproveRedirectsWithCode but additionally logs the full
+// response body when the consent POST does NOT return a redirect, which helps
+// diagnose CI failures where the status is unexpected.
+func TestConsentPost_ApproveRedirectsWithCode_Body(t *testing.T) {
+	// Arrange.
+	srv, _ := testhelper.NewTestServer(t)
+	authClient := loginAndGetCookieClient(t, srv)
+
+	// GET /oauth2/auth → follow redirects → land on /consent.
+	resp, err := authClient.Get(buildAuthorizeURL(srv.URL, nil))
+	if err != nil {
+		t.Fatalf("GET /oauth2/auth: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	finalURL := resp.Request.URL
+	if !strings.Contains(finalURL.Path, "/consent") {
+		t.Fatalf("expected final URL to contain \"/consent\", got %q", finalURL.String())
+	}
+
+	consentQuery := finalURL.RawQuery
+
+	noRedirectClient := &http.Client{
+		Jar: authClient.Jar,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// POST /consent?{query} with action=approve.
+	postReq, err := http.NewRequest(
+		http.MethodPost,
+		srv.URL+"/consent?"+consentQuery,
+		strings.NewReader("action=approve"),
+	)
+	if err != nil {
+		t.Fatalf("POST /consent: new request: %v", err)
+	}
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	postResp, err := noRedirectClient.Do(postReq)
+	if err != nil {
+		t.Fatalf("POST /consent: %v", err)
+	}
+	defer postResp.Body.Close()
+
+	// If the response is NOT a redirect, read and log the body to aid debugging.
+	if postResp.StatusCode != http.StatusSeeOther && postResp.StatusCode != http.StatusFound {
+		body, readErr := io.ReadAll(postResp.Body)
+		if readErr != nil {
+			t.Logf("POST /consent: also failed to read body: %v", readErr)
+		}
+		t.Errorf("POST /consent (approve): status = %d, want redirect (302/303) — body: %s",
+			postResp.StatusCode, body)
+		return
+	}
+
+	location := postResp.Header.Get("Location")
+	if !strings.Contains(location, "code=") {
+		t.Errorf("POST /consent (approve): Location = %q, want a \"code=\" parameter", location)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // GET /oauth2/auth — unauthenticated does NOT reveal 500 errors
 // ---------------------------------------------------------------------------
 
