@@ -6,13 +6,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ory/fosite"
+	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/handler/openid"
+	"github.com/ory/fosite/token/jwt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
 	"github.com/dlddu/my-auth/internal/handler"
 	"github.com/dlddu/my-auth/internal/keygen"
+	"github.com/dlddu/my-auth/internal/storage"
 )
 
 // NewTestServer creates a minimal httptest.Server backed by a temporary SQLite
@@ -63,6 +69,45 @@ func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	return srv, client
 }
 
+// buildFositeProvider initialises a fosite OAuth2Provider with JWT access tokens
+// and OIDC support, backed by the given SQLite storage.
+func buildFositeProvider(cfg *config.Config, privateKey *rsa.PrivateKey, store *storage.Store) fosite.OAuth2Provider {
+	fositeConfig := &fosite.Config{
+		AccessTokenLifespan:        3600 * time.Second,
+		AuthorizeCodeLifespan:      600 * time.Second,
+		IDTokenLifespan:            3600 * time.Second,
+		HashCost:                   12,
+		GlobalSecret:               []byte("some-super-secret-hmac-key-12345"),
+		SendDebugMessagesToClients: true,
+		ScopeStrategy:              fosite.HierarchicScopeStrategy,
+		AudienceMatchingStrategy:   fosite.DefaultAudienceMatchingStrategy,
+	}
+
+	// JWT strategy for access tokens and ID tokens, signed with RSA.
+	jwtStrategy := &jwt.RS256JWTStrategy{
+		PrivateKey: privateKey,
+	}
+
+	// OIDC strategy for issuing ID tokens.
+	oidcStrategy := openid.NewDefaultStrategy(jwtStrategy, fositeConfig)
+
+	return compose.Compose(
+		fositeConfig,
+		store,
+		&compose.CommonStrategy{
+			CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConfig),
+			OpenIDConnectTokenStrategy: oidcStrategy,
+			Signer:                     jwtStrategy,
+		},
+		nil, // hasher — fosite uses BCrypt by default (nil = default)
+		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2RefreshTokenGrantFactory,
+		compose.OpenIDConnectExplicitFactory,
+		compose.OAuth2TokenIntrospectionFactory,
+		compose.OAuth2PKCEFactory,
+	)
+}
+
 // buildRouter constructs the application's http.Handler with the provided
 // config, RSA private key, and database connection.
 func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) http.Handler {
@@ -90,16 +135,15 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
 
-	// OAuth2 authorisation endpoint — requires an authenticated session.
-	r.Get("/oauth2/auth", func(w http.ResponseWriter, r *http.Request) {
-		if !handler.IsAuthenticated(r, db, cfg.SessionSecret) {
-			http.Redirect(w, r, "/login?return_to=/oauth2/auth", http.StatusFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("authorized"))
-	})
+	// Build the fosite OAuth2 provider.
+	store := storage.NewStore(db)
+	provider := buildFositeProvider(cfg, privateKey, store)
+
+	// OAuth2/OIDC endpoints.
+	authorizeHandler := handler.NewAuthorizeHandler(cfg, db, provider)
+	r.Get("/oauth2/auth", authorizeHandler)
+	r.Post("/oauth2/auth", authorizeHandler)
+	r.Post("/oauth2/token", handler.NewTokenHandler(provider))
 
 	return r
 }

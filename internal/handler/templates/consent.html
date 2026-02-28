@@ -1,0 +1,37 @@
+{{define "title"}}Authorize — my-auth{{end}}
+
+{{define "content"}}
+<div class="card" style="max-width:480px;">
+    <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem;text-align:center;">Authorize Application</h1>
+    <p style="text-align:center;color:#9CA3AF;margin-bottom:1.5rem;font-size:0.875rem;">
+        <strong style="color:#F9FAFB;">{{.ClientName}}</strong>
+        <span style="color:#6B7280;font-size:0.75rem;display:block;">{{.ClientID}}</span>
+    </p>
+
+    {{if .Scopes}}
+    <div style="margin-bottom:1.5rem;">
+        <p style="font-size:0.875rem;color:#D1D5DB;margin-bottom:0.5rem;">This application is requesting access to:</p>
+        <ul style="list-style:none;padding:0;">
+            {{range .Scopes}}
+            <li style="padding:0.375rem 0.75rem;background-color:#1F2937;border-radius:0.375rem;margin-bottom:0.375rem;font-size:0.875rem;color:#F9FAFB;">
+                {{.}}
+            </li>
+            {{end}}
+        </ul>
+    </div>
+    {{end}}
+
+    <form method="POST" action="/oauth2/auth?{{.QueryString}}">
+        <div style="display:flex;gap:0.75rem;margin-top:0.5rem;">
+            <button type="submit" name="action" value="deny"
+                style="flex:1;padding:0.625rem;background-color:#374151;color:#F9FAFB;border:none;border-radius:0.375rem;font-size:1rem;cursor:pointer;">
+                Deny
+            </button>
+            <button type="submit" name="action" value="approve"
+                style="flex:1;padding:0.625rem;background-color:#6366F1;color:#F9FAFB;border:none;border-radius:0.375rem;font-size:1rem;cursor:pointer;">
+                Approve
+            </button>
+        </div>
+    </form>
+</div>
+{{end}}
