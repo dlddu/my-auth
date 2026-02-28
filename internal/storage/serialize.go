@@ -10,6 +10,14 @@ import (
 	"github.com/ory/fosite/token/jwt"
 )
 
+// oidcSessionAccessor provides access to OIDC session data. Both
+// *openid.DefaultSession and custom wrapper types (like JWTOIDCSession)
+// that embed it satisfy this interface.
+type oidcSessionAccessor interface {
+	IDTokenClaims() *jwt.IDTokenClaims
+	GetSubject() string
+}
+
 // requestData is the JSON-serializable form of a fosite.Requester.
 // We store only the fields we need for token operations.
 type requestData struct {
@@ -56,27 +64,30 @@ func serializeRequest(req fosite.Requester) ([]byte, error) {
 		GrantedScopes: []string(req.GetGrantedScopes()),
 	}
 
-	// Serialize the session.
+	// Serialize the session. Use the oidcSessionAccessor interface so that
+	// both *openid.DefaultSession and wrapper types (e.g. JWTOIDCSession)
+	// are handled without a concrete type assertion.
 	if sess := req.GetSession(); sess != nil {
-		if oidcSess, ok := sess.(*openid.DefaultSession); ok {
+		if oidcSess, ok := sess.(oidcSessionAccessor); ok {
 			sd := &oidcSessionData{
-				Subject: oidcSess.Subject,
+				Subject: oidcSess.GetSubject(),
 			}
-			if oidcSess.Claims != nil {
+			claims := oidcSess.IDTokenClaims()
+			if claims != nil {
 				sd.Claims = &oidcClaimsData{
-					Issuer:                              oidcSess.Claims.Issuer,
-					Subject:                             oidcSess.Claims.Subject,
-					Audience:                            []string(oidcSess.Claims.Audience),
-					Nonce:                               oidcSess.Claims.Nonce,
-					ExpiresAt:                           oidcSess.Claims.ExpiresAt,
-					IssuedAt:                            oidcSess.Claims.IssuedAt,
-					RequestedAt:                         oidcSess.Claims.RequestedAt,
-					AuthTime:                            oidcSess.Claims.AuthTime,
-					AccessTokenHash:                     oidcSess.Claims.AccessTokenHash,
-					AuthenticationContextClassReference: oidcSess.Claims.AuthenticationContextClassReference,
-					AuthenticationMethodsReferences:     oidcSess.Claims.AuthenticationMethodsReferences,
-					CodeHash:                            oidcSess.Claims.CodeHash,
-					Extra:                               oidcSess.Claims.Extra,
+					Issuer:                              claims.Issuer,
+					Subject:                             claims.Subject,
+					Audience:                            []string(claims.Audience),
+					Nonce:                               claims.Nonce,
+					ExpiresAt:                           claims.ExpiresAt,
+					IssuedAt:                            claims.IssuedAt,
+					RequestedAt:                         claims.RequestedAt,
+					AuthTime:                            claims.AuthTime,
+					AccessTokenHash:                     claims.AccessTokenHash,
+					AuthenticationContextClassReference: claims.AuthenticationContextClassReference,
+					AuthenticationMethodsReferences:     claims.AuthenticationMethodsReferences,
+					CodeHash:                            claims.CodeHash,
+					Extra:                               claims.Extra,
 				}
 			}
 			rd.Session = sd
@@ -101,26 +112,35 @@ func deserializeRequest(data []byte, sessionContainer fosite.Session, _ *ClientS
 
 	// Restore session fields into the provided container.
 	if rd.Session != nil {
-		if oidcSess, ok := sessionContainer.(*openid.DefaultSession); ok {
-			oidcSess.Subject = rd.Session.Subject
-			if rd.Session.Claims != nil {
-				if oidcSess.Claims == nil {
-					oidcSess.Claims = &jwt.IDTokenClaims{}
-				}
-				oidcSess.Claims.Issuer = rd.Session.Claims.Issuer
-				oidcSess.Claims.Subject = rd.Session.Claims.Subject
-				oidcSess.Claims.Audience = rd.Session.Claims.Audience
-				oidcSess.Claims.Nonce = rd.Session.Claims.Nonce
-				oidcSess.Claims.ExpiresAt = rd.Session.Claims.ExpiresAt
-				oidcSess.Claims.IssuedAt = rd.Session.Claims.IssuedAt
-				oidcSess.Claims.RequestedAt = rd.Session.Claims.RequestedAt
-				oidcSess.Claims.AuthTime = rd.Session.Claims.AuthTime
-				oidcSess.Claims.AccessTokenHash = rd.Session.Claims.AccessTokenHash
-				oidcSess.Claims.AuthenticationContextClassReference = rd.Session.Claims.AuthenticationContextClassReference
-				oidcSess.Claims.AuthenticationMethodsReferences = rd.Session.Claims.AuthenticationMethodsReferences
-				oidcSess.Claims.CodeHash = rd.Session.Claims.CodeHash
-				oidcSess.Claims.Extra = rd.Session.Claims.Extra
+		// Populate the OIDC claims via interface (works for both
+		// *openid.DefaultSession and wrapper types like JWTOIDCSession).
+		if accessor, ok := sessionContainer.(oidcSessionAccessor); ok {
+			claims := accessor.IDTokenClaims()
+			if rd.Session.Claims != nil && claims != nil {
+				claims.Issuer = rd.Session.Claims.Issuer
+				claims.Subject = rd.Session.Claims.Subject
+				claims.Audience = rd.Session.Claims.Audience
+				claims.Nonce = rd.Session.Claims.Nonce
+				claims.ExpiresAt = rd.Session.Claims.ExpiresAt
+				claims.IssuedAt = rd.Session.Claims.IssuedAt
+				claims.RequestedAt = rd.Session.Claims.RequestedAt
+				claims.AuthTime = rd.Session.Claims.AuthTime
+				claims.AccessTokenHash = rd.Session.Claims.AccessTokenHash
+				claims.AuthenticationContextClassReference = rd.Session.Claims.AuthenticationContextClassReference
+				claims.AuthenticationMethodsReferences = rd.Session.Claims.AuthenticationMethodsReferences
+				claims.CodeHash = rd.Session.Claims.CodeHash
+				claims.Extra = rd.Session.Claims.Extra
 			}
+		}
+
+		// Set Subject on the session struct. Use the concrete type for
+		// *openid.DefaultSession (direct field access) and a SetSubject
+		// interface for wrapper types that embed it.
+		switch s := sessionContainer.(type) {
+		case *openid.DefaultSession:
+			s.Subject = rd.Session.Subject
+		case interface{ SetSubject(string) }:
+			s.SetSubject(rd.Session.Subject)
 		}
 	}
 
