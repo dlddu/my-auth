@@ -174,8 +174,9 @@ test.describe("Authorization Code Flow — full happy path", () => {
     await page.locator('button[type="submit"]').click();
 
     // Act — Step 3: approve the consent screen if one is presented.
-    const currentUrl = page.url();
-    if (currentUrl.includes("/consent")) {
+    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
+    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
@@ -202,6 +203,8 @@ test.describe("Authorization Code Flow — full happy path", () => {
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
+    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
+    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
@@ -252,6 +255,8 @@ test.describe("access_token — JWT claim validation", () => {
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
+    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
+    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
@@ -438,6 +443,8 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
+    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
+    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
@@ -477,6 +484,8 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
+    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
+    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
@@ -509,6 +518,8 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
+    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
+    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
@@ -549,6 +560,8 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
+    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
+    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
@@ -580,6 +593,8 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
+    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
+    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
