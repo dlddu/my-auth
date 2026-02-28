@@ -174,17 +174,52 @@ test.describe("Authorization Code Flow — full happy path", () => {
     await page.locator('button[type="submit"]').click();
 
     // Act — Step 3: approve the consent screen if one is presented.
-    // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
     await page.waitForURL(/\/consent/, { timeout: 10_000 });
+    console.log("[DEBUG] On consent page, URL:", page.url());
+
     if (page.url().includes("/consent")) {
+      // Log the consent page HTML form action
+      const formAction = await page.locator("form").getAttribute("action");
+      console.log("[DEBUG] Form action attribute:", formAction);
+
+      // Listen for ALL requests and responses after clicking
+      const requestLog: string[] = [];
+      const responseLog: string[] = [];
+      page.on("request", (req) => {
+        requestLog.push(`${req.method()} ${req.url()}`);
+        console.log("[DEBUG] Request:", req.method(), req.url());
+      });
+      page.on("response", (resp) => {
+        const location = resp.headers()["location"] || "";
+        responseLog.push(`${resp.status()} ${resp.url()} Location: ${location}`);
+        console.log("[DEBUG] Response:", resp.status(), resp.url(), "Location:", location);
+      });
+
+      // Click approve
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
+
+      // Wait for some navigation or timeout
+      await page.waitForTimeout(5000);
+      console.log("[DEBUG] After 5s wait, page URL:", page.url());
+      console.log("[DEBUG] Page title:", await page.title());
+      console.log("[DEBUG] All requests:", JSON.stringify(requestLog));
+      console.log("[DEBUG] All responses:", JSON.stringify(responseLog));
+
+      // Try to get page content to see what the server returned
+      try {
+        const bodyText = await page.locator("body").innerText();
+        console.log("[DEBUG] Page body text (first 500 chars):", bodyText.substring(0, 500));
+      } catch (e) {
+        console.log("[DEBUG] Could not read body:", e);
+      }
     }
 
-    // Assert — the browser must have been redirected to the callback URI
-    // with a `code` query parameter and matching `state`.
-    // Wait for the browser to attempt the callback request (no server needed).
-    await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
-    // callbackUrl was already captured by the page.on("request") handler above.
+    // This will likely timeout — that's OK, the debug output above is what we need
+    try {
+      await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    } catch (e) {
+      console.log("[DEBUG] waitForRequest timed out — callback redirect did not happen");
+    }
 
     expect(callbackUrl).toContain("code=");
     expect(callbackUrl).toContain("state=test-state-value");
