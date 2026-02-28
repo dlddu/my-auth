@@ -8,11 +8,13 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
 	"github.com/dlddu/my-auth/internal/handler"
 	"github.com/dlddu/my-auth/internal/keygen"
+	"github.com/dlddu/my-auth/internal/storage"
 )
 
 // NewTestServer creates a minimal httptest.Server backed by a temporary SQLite
@@ -40,6 +42,10 @@ func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 		}
 	})
 
+	// Seed the test OAuth2 client with a bcrypt-hashed secret so fosite's
+	// BCrypt hasher can authenticate the client during token requests.
+	seedTestClient(t, db)
+
 	// Generate a test RSA key pair (in-memory, no disk I/O required).
 	key, err := keygen.GenerateRSAKeyPair(keygen.DefaultKeyBits)
 	if err != nil {
@@ -61,6 +67,31 @@ func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	client := srv.Client()
 
 	return srv, client
+}
+
+// seedTestClient inserts the canonical test OAuth2 client into the clients
+// table with a bcrypt-hashed secret so fosite's BCrypt hasher works correctly.
+func seedTestClient(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("testhelper: bcrypt test client secret: %v", err)
+	}
+
+	_, err = db.Exec(`
+		INSERT OR IGNORE INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"test-client",
+		string(hash),
+		`["http://localhost:9999/callback"]`,
+		`["authorization_code","refresh_token"]`,
+		`["code"]`,
+		"openid profile email",
+	)
+	if err != nil {
+		t.Fatalf("testhelper: seed test client: %v", err)
+	}
 }
 
 // buildRouter constructs the application's http.Handler with the provided
@@ -90,16 +121,20 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
 
-	// OAuth2 authorisation endpoint — requires an authenticated session.
-	r.Get("/oauth2/auth", func(w http.ResponseWriter, r *http.Request) {
-		if !handler.IsAuthenticated(r, db, cfg.SessionSecret) {
-			http.Redirect(w, r, "/login?return_to=/oauth2/auth", http.StatusFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("authorized"))
-	})
+	// Create the fosite storage and provider.
+	store, err := storage.New(db)
+	if err != nil {
+		panic("testhelper: create storage: " + err.Error())
+	}
+
+	provider := handler.NewOAuth2Provider(store, privateKey, cfg.Issuer)
+	oauth2 := handler.NewOAuth2Handlers(provider, cfg, db)
+
+	// OAuth2 authorisation and token endpoints.
+	authorizeHandler := oauth2.AuthorizeHandler()
+	r.Get("/oauth2/auth", authorizeHandler)
+	r.Post("/oauth2/auth", authorizeHandler)
+	r.Post("/oauth2/token", oauth2.TokenHandler())
 
 	return r
 }

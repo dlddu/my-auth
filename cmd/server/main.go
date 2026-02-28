@@ -13,6 +13,7 @@ import (
 	"github.com/dlddu/my-auth/internal/database"
 	"github.com/dlddu/my-auth/internal/handler"
 	"github.com/dlddu/my-auth/internal/keygen"
+	"github.com/dlddu/my-auth/internal/storage"
 )
 
 func main() {
@@ -60,7 +61,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 4. 라우터 설정
+	// 4. 스토리지 및 OAuth2 프로바이더 생성
+	store, err := storage.New(db)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "my-auth: create storage: %v\n", err)
+		os.Exit(1)
+	}
+
+	provider := handler.NewOAuth2Provider(store, privateKey, cfg.Issuer)
+	oauth2 := handler.NewOAuth2Handlers(provider, cfg, db)
+
+	// 5. 라우터 설정
 	r := chi.NewRouter()
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -82,17 +93,13 @@ func main() {
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
 
-	r.Get("/oauth2/auth", func(w http.ResponseWriter, r *http.Request) {
-		if !handler.IsAuthenticated(r, db, cfg.SessionSecret) {
-			http.Redirect(w, r, "/login?return_to=/oauth2/auth", http.StatusFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("authorized"))
-	})
+	// OAuth2 authorisation and token endpoints.
+	authorizeHandler := oauth2.AuthorizeHandler()
+	r.Get("/oauth2/auth", authorizeHandler)
+	r.Post("/oauth2/auth", authorizeHandler)
+	r.Post("/oauth2/token", oauth2.TokenHandler())
 
-	// 5. 서버 시작
+	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	fmt.Fprintf(os.Stdout, "my-auth: listening on %s\n", addr)
 
