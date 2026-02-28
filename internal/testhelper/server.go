@@ -20,6 +20,32 @@ import (
 	"github.com/dlddu/my-auth/internal/storage"
 )
 
+// seedTestClient inserts the standard test OAuth2 client into db if it does
+// not already exist. This ensures all unit-test servers have a registered
+// client so fosite can validate authorize requests.
+func seedTestClient(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	_, err := db.ExecContext(context.Background(),
+		`INSERT OR IGNORE INTO clients
+		    (id, secret, redirect_uris, grant_types, response_types, scopes)
+		 VALUES
+		    (?, ?, ?, ?, ?, ?)`,
+		"test-client",
+		// Store the raw secret. The authorize endpoint does not verify the
+		// client secret (only the token endpoint does), so any value works for
+		// authorize-phase unit tests.
+		"test-secret",
+		`["http://localhost:9999/callback"]`,
+		`["authorization_code", "refresh_token"]`,
+		`["code"]`,
+		`openid profile email`,
+	)
+	if err != nil {
+		t.Fatalf("testhelper.seedTestClient: insert: %v", err)
+	}
+}
+
 // NewTestServer creates a minimal httptest.Server backed by a temporary SQLite
 // database and returns both the server and a pre-configured *http.Client.
 //
@@ -50,6 +76,10 @@ func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	if err != nil {
 		t.Fatalf("testhelper: generate RSA key pair: %v", err)
 	}
+
+	// Seed the standard test OAuth2 client so fosite can validate authorize
+	// requests in unit tests without requiring each test to insert it manually.
+	seedTestClient(t, db)
 
 	// Build the HTTP handler.
 	h := buildRouter(cfg, key, db)
@@ -137,6 +167,12 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	authorizeHandler := handler.NewAuthorizeHandler(cfg, db, provider)
 	r.Get("/oauth2/auth", authorizeHandler)
 	r.Post("/oauth2/auth", authorizeHandler)
+
+	// Consent endpoint — GET renders the consent page, POST processes the decision.
+	consentHandler := handler.NewConsentHandler(cfg, db, provider)
+	r.Get("/consent", consentHandler)
+	r.Post("/consent", consentHandler)
+
 	r.Post("/oauth2/token", handler.NewTokenHandler(provider))
 
 	return r

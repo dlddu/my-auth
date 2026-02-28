@@ -137,6 +137,12 @@ func main() {
 	authorizeHandler := handler.NewAuthorizeHandler(cfg, db, provider)
 	r.Get("/oauth2/auth", authorizeHandler)
 	r.Post("/oauth2/auth", authorizeHandler)
+
+	// Consent endpoint — GET renders the consent page, POST processes the decision.
+	consentHandler := handler.NewConsentHandler(cfg, db, provider)
+	r.Get("/consent", consentHandler)
+	r.Post("/consent", consentHandler)
+
 	r.Post("/oauth2/token", handler.NewTokenHandler(provider))
 
 	// 7. 서버 시작
