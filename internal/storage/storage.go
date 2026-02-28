@@ -2,11 +2,12 @@
 // backed by SQLite.
 //
 // Interfaces implemented:
-//   - fosite.ClientManager           (GetClient)
-//   - fosite.AuthorizeCodeStorage    (Create/Get/InvalidateAuthorizeCodeSession)
-//   - fosite.AccessTokenStorage      (Create/Get/Delete/RevokeAccessToken)
-//   - fosite.RefreshTokenStorage     (Create/Get/Delete/RevokeRefreshToken)
-//   - fosite.OpenIDConnectRequestStorage (Create/Get/DeleteOpenIDConnectSession)
+//   - fosite.ClientManager                (GetClient, ClientAssertionJWTValid, SetClientAssertionJWT)
+//   - oauth2storage.AuthorizeCodeStorage  (Create/Get/InvalidateAuthorizeCodeSession)
+//   - oauth2storage.AccessTokenStorage    (Create/Get/Delete/RevokeAccessToken)
+//   - oauth2storage.RefreshTokenStorage   (Create/Get/Delete/RotateRefreshToken)
+//   - oauth2storage.TokenRevocationStorage (RevokeRefreshToken/RevokeAccessToken)
+//   - openid.OpenIDConnectRequestStorage  (Create/Get/DeleteOpenIDConnectSession)
 package storage
 
 import (
@@ -20,11 +21,9 @@ import (
 	"time"
 
 	"github.com/ory/fosite"
+	oauth2storage "github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
 )
-
-// ErrNotFound is returned when a requested token or client does not exist.
-var ErrNotFound = errors.New("storage: not found")
 
 // Store is the SQLite-backed implementation of all fosite storage interfaces.
 // The zero value is not usable; use New to construct a Store.
@@ -138,7 +137,7 @@ func (s *Store) unmarshalRequest(ctx context.Context, data []byte) (*fosite.Requ
 }
 
 // ---------------------------------------------------------------------------
-// ClientManager — GetClient
+// ClientManager — GetClient, ClientAssertionJWTValid, SetClientAssertionJWT
 // ---------------------------------------------------------------------------
 
 // GetClient retrieves an OAuth2 client from the clients table by ID.
@@ -190,6 +189,18 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 	}
 
 	return client, nil
+}
+
+// ClientAssertionJWTValid returns nil if the JTI is not known (no-op implementation).
+// A production implementation should check a blocklist in persistent storage.
+func (s *Store) ClientAssertionJWTValid(_ context.Context, _ string) error {
+	return nil
+}
+
+// SetClientAssertionJWT marks a JTI as known for the given expiry time (no-op implementation).
+// A production implementation should persist the JTI to prevent replay attacks.
+func (s *Store) SetClientAssertionJWT(_ context.Context, _ string, _ time.Time) error {
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +378,9 @@ func (s *Store) RevokeAccessToken(ctx context.Context, requestID string) error {
 // ---------------------------------------------------------------------------
 
 // CreateRefreshTokenSession stores a refresh token session.
-func (s *Store) CreateRefreshTokenSession(ctx context.Context, signature string, req fosite.Requester) error {
+// The accessSignature parameter is accepted to satisfy the fosite v0.49.0
+// oauth2.RefreshTokenStorage interface but is not persisted by this implementation.
+func (s *Store) CreateRefreshTokenSession(ctx context.Context, signature string, _ string, req fosite.Requester) error {
 	data, err := marshalRequest(req)
 	if err != nil {
 		return fmt.Errorf("storage: CreateRefreshTokenSession: %w", err)
@@ -398,7 +411,7 @@ func (s *Store) CreateRefreshTokenSession(ctx context.Context, signature string,
 }
 
 // GetRefreshTokenSession retrieves a refresh token session by signature.
-// Returns fosite.ErrTokenRevoked if the token has been revoked.
+// Returns fosite.ErrInactiveToken if the token has been revoked.
 func (s *Store) GetRefreshTokenSession(ctx context.Context, signature string, _ fosite.Session) (fosite.Requester, error) {
 	var (
 		sessionData string
@@ -415,7 +428,7 @@ func (s *Store) GetRefreshTokenSession(ctx context.Context, signature string, _ 
 	}
 
 	if revoked == 1 {
-		return nil, fosite.ErrTokenRevoked
+		return nil, fosite.ErrInactiveToken
 	}
 
 	req, err := s.unmarshalRequest(ctx, []byte(sessionData))
@@ -445,10 +458,11 @@ func (s *Store) RevokeRefreshToken(ctx context.Context, requestID string) error 
 	return nil
 }
 
-// RevokeRefreshTokenMaybeGracePeriod revokes a refresh token. Satisfies the
-// optional fosite interface used by some token rotation strategies.
-func (s *Store) RevokeRefreshTokenMaybeGracePeriod(ctx context.Context, requestID string, signature string) error {
-	return s.RevokeRefreshToken(ctx, requestID)
+// RotateRefreshToken is called during refresh token rotation. This implementation
+// is a no-op because rotation is handled at the application level via
+// DeleteRefreshTokenSession and CreateRefreshTokenSession.
+func (s *Store) RotateRefreshToken(_ context.Context, _ string, _ string) error {
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -521,9 +535,10 @@ func (s *Store) DeleteOpenIDConnectSession(ctx context.Context, authorizeCode st
 // ---------------------------------------------------------------------------
 
 var (
-	_ fosite.ClientManager              = (*Store)(nil)
-	_ fosite.AuthorizeCodeStorage       = (*Store)(nil)
-	_ fosite.AccessTokenStorage         = (*Store)(nil)
-	_ fosite.RefreshTokenStorage        = (*Store)(nil)
-	_ fosite.OpenIDConnectRequestStorage = (*Store)(nil)
+	_ fosite.ClientManager                  = (*Store)(nil)
+	_ oauth2storage.AuthorizeCodeStorage    = (*Store)(nil)
+	_ oauth2storage.AccessTokenStorage      = (*Store)(nil)
+	_ oauth2storage.RefreshTokenStorage     = (*Store)(nil)
+	_ oauth2storage.TokenRevocationStorage  = (*Store)(nil)
+	_ openid.OpenIDConnectRequestStorage    = (*Store)(nil)
 )

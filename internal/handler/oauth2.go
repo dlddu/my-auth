@@ -59,7 +59,7 @@ type OAuth2Handlers struct {
 // NewOAuth2Provider creates a new fosite OAuth2 provider backed by the given
 // storage and RSA private key.
 func NewOAuth2Provider(store *storage.Store, privateKey *rsa.PrivateKey, issuer string) fosite.OAuth2Provider {
-	fositeConfig := &compose.Config{
+	fositeConfig := &fosite.Config{
 		AccessTokenLifespan:        time.Hour,
 		AuthorizeCodeLifespan:      10 * time.Minute,
 		IDTokenLifespan:            time.Hour,
@@ -69,18 +69,23 @@ func NewOAuth2Provider(store *storage.Store, privateKey *rsa.PrivateKey, issuer 
 		ScopeStrategy:              fosite.HierarchicScopeStrategy,
 		AudienceMatchingStrategy:   fosite.DefaultAudienceMatchingStrategy,
 		EnforcePKCE:                false,
+		GlobalSecret:               []byte("some-super-secret-32-byte-value!"),
+	}
+
+	keyGetter := func(_ context.Context) (interface{}, error) {
+		return privateKey, nil
 	}
 
 	strategy := &compose.CommonStrategy{
-		CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConfig, []byte("some-super-secret-32-byte-value!"), nil),
-		OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(fositeConfig, privateKey),
+		CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConfig),
+		OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyGetter, fositeConfig),
+		Signer:                     &jwt.DefaultSigner{GetPrivateKey: keyGetter},
 	}
 
 	return compose.Compose(
 		fositeConfig,
 		store,
 		strategy,
-		nil, // hasher — fosite uses BCrypt by default
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
@@ -128,7 +133,7 @@ func (h *OAuth2Handlers) handleAuthorizeGet(w http.ResponseWriter, r *http.Reque
 
 	ar, err := h.provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
-		h.provider.WriteAuthorizeError(w, ar, err)
+		h.provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
 
@@ -181,12 +186,12 @@ func (h *OAuth2Handlers) handleAuthorizePost(w http.ResponseWriter, r *http.Requ
 
 	ar, err := h.provider.NewAuthorizeRequest(ctx, syntheticR)
 	if err != nil {
-		h.provider.WriteAuthorizeError(w, ar, err)
+		h.provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
 
 	if action == "deny" {
-		h.provider.WriteAuthorizeError(w, ar, fosite.ErrAccessDenied)
+		h.provider.WriteAuthorizeError(ctx, w, ar, fosite.ErrAccessDenied)
 		return
 	}
 
@@ -216,11 +221,11 @@ func (h *OAuth2Handlers) handleAuthorizePost(w http.ResponseWriter, r *http.Requ
 
 	response, err := h.provider.NewAuthorizeResponse(ctx, ar, mySession)
 	if err != nil {
-		h.provider.WriteAuthorizeError(w, ar, err)
+		h.provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
 
-	h.provider.WriteAuthorizeResponse(w, ar, response)
+	h.provider.WriteAuthorizeResponse(ctx, w, ar, response)
 }
 
 // TokenHandler handles POST /oauth2/token.
@@ -232,7 +237,7 @@ func (h *OAuth2Handlers) TokenHandler() http.HandlerFunc {
 
 		accessRequest, err := h.provider.NewAccessRequest(ctx, r, mySession)
 		if err != nil {
-			h.provider.WriteAccessError(w, accessRequest, err)
+			h.provider.WriteAccessError(ctx, w, accessRequest, err)
 			return
 		}
 
@@ -243,11 +248,11 @@ func (h *OAuth2Handlers) TokenHandler() http.HandlerFunc {
 
 		response, err := h.provider.NewAccessResponse(ctx, accessRequest)
 		if err != nil {
-			h.provider.WriteAccessError(w, accessRequest, err)
+			h.provider.WriteAccessError(ctx, w, accessRequest, err)
 			return
 		}
 
-		h.provider.WriteAccessResponse(w, accessRequest, response)
+		h.provider.WriteAccessResponse(ctx, w, accessRequest, response)
 	}
 }
 

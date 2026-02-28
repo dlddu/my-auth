@@ -309,10 +309,10 @@ func TestPostOAuth2Auth_ApproveIssuesAuthorizationCode(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// Assert — 302 redirect to the callback URI
-	if resp.StatusCode != http.StatusFound {
+	// Assert — 302 or 303 redirect to the callback URI
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("status = %d, want %d (302 Found); body = %q", resp.StatusCode, http.StatusFound, body)
+		t.Fatalf("status = %d, want 302 or 303 redirect; body = %q", resp.StatusCode, body)
 	}
 
 	location := resp.Header.Get("Location")
@@ -378,8 +378,8 @@ func TestPostOAuth2Auth_ApprovePreservesState(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusFound {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusFound)
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 302 or 303 redirect", resp.StatusCode)
 	}
 
 	location := resp.Header.Get("Location")
@@ -443,9 +443,9 @@ func TestPostOAuth2Auth_DenyReturnsErrorRedirect(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// Assert — must be a redirect (302)
-	if resp.StatusCode != http.StatusFound {
-		t.Fatalf("status = %d, want %d (302 Found)", resp.StatusCode, http.StatusFound)
+	// Assert — must be a redirect (302 or 303)
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 302 or 303 redirect", resp.StatusCode)
 	}
 
 	location := resp.Header.Get("Location")

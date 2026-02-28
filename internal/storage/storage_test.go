@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/ory/fosite"
+	oauth2storage "github.com/ory/fosite/handler/oauth2"
+	"github.com/ory/fosite/handler/openid"
 
 	"github.com/dlddu/my-auth/internal/database"
 	"github.com/dlddu/my-auth/internal/storage"
@@ -462,7 +464,7 @@ func TestRefreshTokenStore_CreateAndGet(t *testing.T) {
 	req := newAccessRequest("req-refresh-001")
 
 	// Act
-	if err := s.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := s.CreateRefreshTokenSession(ctx, sig, "", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 
@@ -508,7 +510,7 @@ func TestRefreshTokenStore_DeleteRemovesToken(t *testing.T) {
 	sig := "refresh-sig-002"
 	req := newAccessRequest("req-refresh-002")
 
-	if err := s.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := s.CreateRefreshTokenSession(ctx, sig, "", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 
@@ -535,7 +537,7 @@ func TestRefreshTokenStore_RevokeRefreshToken(t *testing.T) {
 	sig := "refresh-sig-003"
 	req := newAccessRequest("req-refresh-003")
 
-	if err := s.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := s.CreateRefreshTokenSession(ctx, sig, "", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 
@@ -562,7 +564,7 @@ func TestRefreshTokenStore_RevokeRefreshToken_SetsRevokedFlag(t *testing.T) {
 	sig := "refresh-sig-004"
 	req := newAccessRequest("req-refresh-004")
 
-	if err := s.CreateRefreshTokenSession(ctx, sig, req); err != nil {
+	if err := s.CreateRefreshTokenSession(ctx, sig, "", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession: %v", err)
 	}
 
@@ -678,10 +680,10 @@ func TestStore_ImplementsFositeStorage(t *testing.T) {
 	// These interface assertions will cause a compile error if *storage.Store
 	// does not implement the interfaces.
 	var _ fosite.ClientManager = s
-	var _ fosite.AuthorizeCodeStorage = s
-	var _ fosite.AccessTokenStorage = s
-	var _ fosite.RefreshTokenStorage = s
-	var _ fosite.OpenIDConnectRequestStorage = s
+	var _ oauth2storage.AuthorizeCodeStorage = s
+	var _ oauth2storage.AccessTokenStorage = s
+	var _ oauth2storage.RefreshTokenStorage = s
+	var _ openid.OpenIDConnectRequestStorage = s
 
 	// Runtime sanity: the store must not be nil.
 	if s == nil {
