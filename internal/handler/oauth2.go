@@ -33,7 +33,7 @@ type consentPageData struct {
 	// QueryString contains the raw OAuth2 authorize query parameters so the
 	// consent form can embed them as hidden fields and POST them back to
 	// /oauth2/auth for fosite to re-parse.
-	QueryString string
+	QueryString template.URL
 }
 
 // getUsernameFromSession retrieves the username associated with the session cookie.
@@ -190,7 +190,7 @@ func handleConsentGet(w http.ResponseWriter, r *http.Request, cfg *config.Config
 		ClientName: ar.GetClient().GetID(),
 		Scopes:     scopes,
 		// Pass the raw query string so the consent form can POST it back.
-		QueryString: r.URL.RawQuery,
+		QueryString: template.URL(r.URL.RawQuery),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
