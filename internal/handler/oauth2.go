@@ -203,9 +203,11 @@ func handleConsentGet(w http.ResponseWriter, r *http.Request, cfg *config.Config
 // handleConsentPost handles POST /consent (consent form submission from the
 // /consent page). The consent form POSTs to /consent?{oauth2 query string}.
 //
-// fosite's NewAuthorizeRequest reads r.Form which — after ParseForm — already
-// contains both the URL query params and the POST body. We therefore only need
-// to ensure ParseForm has been called before delegating to fosite.
+// fosite's NewAuthorizeRequest internally calls r.ParseMultipartForm which
+// re-parses the request body and resets r.Form. To avoid this clobbering the
+// OAuth2 params, we build a synthetic GET request whose URL carries the full
+// OAuth2 query string. fosite reads params from r.Form which ParseMultipartForm
+// populates from r.URL.Query() for a GET request, so all params are available.
 func handleConsentPost(w http.ResponseWriter, r *http.Request, cfg *config.Config, db *sql.DB, provider fosite.OAuth2Provider) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -214,20 +216,16 @@ func handleConsentPost(w http.ResponseWriter, r *http.Request, cfg *config.Confi
 
 	ctx := r.Context()
 
-	// After ParseForm, r.Form contains URL query params + POST body merged.
-	// fosite reads r.Form (via r.FormValue / r.Form.Get), so the OAuth2 params
-	// that arrived in the query string are already available.
-	//
-	// Build a synthetic request pointing at /oauth2/auth with the merged form
-	// data so fosite can validate the authorize request correctly.
-	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/oauth2/auth?"+r.URL.RawQuery, nil)
+	// Build a synthetic GET request that fosite can parse for the OAuth2 params.
+	// The consent form posts to /consent?{oauth2 params}, so r.URL.RawQuery
+	// contains the complete OAuth2 query string. Passing it as a GET ensures
+	// fosite's internal ParseMultipartForm reads it from URL.Query() and does
+	// not try to parse a (nil) POST body, which would wipe out any pre-set Form.
+	proxyReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/oauth2/auth?"+r.URL.RawQuery, nil)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	proxyReq.Form = r.Form
-	proxyReq.PostForm = r.PostForm
-	proxyReq.Header = r.Header
 	for _, c := range r.Cookies() {
 		proxyReq.AddCookie(c)
 	}
