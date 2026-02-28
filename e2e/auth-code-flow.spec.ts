@@ -10,8 +10,6 @@ import { test, expect } from "@playwright/test";
  * All tests are skipped pending server-side implementation of
  * /oauth2/auth (code issuance) and /oauth2/token.
  * Remove the `test.skip()` calls once DLD-584 is implemented.
- *
- * TODO: Activate when DLD-584 is implemented.
  */
 
 // ---------------------------------------------------------------------------
@@ -66,9 +64,6 @@ function buildAuthorizeUrl(overrides: Record<string, string> = {}): string {
 
 test.describe("GET /oauth2/auth — authorization request", () => {
   test("redirects unauthenticated user to /login", async ({ page }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Act
     await page.goto(buildAuthorizeUrl());
 
@@ -80,9 +75,6 @@ test.describe("GET /oauth2/auth — authorization request", () => {
   test("preserves original authorize parameters through login redirect", async ({
     page,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Act
     await page.goto(buildAuthorizeUrl());
 
@@ -100,9 +92,6 @@ test.describe("GET /login — login form", () => {
   test("renders the login form with email and password fields", async ({
     page,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Act
     await page.goto("/login");
 
@@ -122,9 +111,6 @@ test.describe("POST /login — credential submission", () => {
   test("accepts valid credentials and redirects back to authorize", async ({
     page,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Arrange — start from the authorization endpoint so the server knows
     // where to redirect after a successful login.
     await page.goto(buildAuthorizeUrl());
@@ -146,9 +132,6 @@ test.describe("POST /login — credential submission", () => {
   test("rejects invalid credentials and re-renders login with an error", async ({
     page,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Arrange
     await page.goto("/login");
 
@@ -174,9 +157,6 @@ test.describe("Authorization Code Flow — full happy path", () => {
   test("completes authorize → login → consent → callback with code", async ({
     page,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Arrange — intercept the final redirect to the callback URI so we can
     // capture the authorization code without running a real redirect server.
     let callbackUrl = "";
@@ -217,9 +197,6 @@ test.describe("Authorization Code Flow — full happy path", () => {
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Arrange — complete the login flow to obtain a code.
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
@@ -300,9 +277,6 @@ test.describe("access_token — JWT claim validation", () => {
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     const tokens = await obtainTokens(page, request);
     const accessToken = tokens.access_token as string;
 
@@ -313,9 +287,6 @@ test.describe("access_token — JWT claim validation", () => {
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Arrange — fetch the expected issuer from the discovery document.
     const discoveryResponse = await request.get(
       "/.well-known/openid-configuration"
@@ -334,9 +305,6 @@ test.describe("access_token — JWT claim validation", () => {
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     const tokens = await obtainTokens(page, request);
     const { payload } = decodeJwt(tokens.access_token as string);
 
@@ -350,9 +318,6 @@ test.describe("access_token — JWT claim validation", () => {
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     const tokens = await obtainTokens(page, request);
     const { payload } = decodeJwt(tokens.access_token as string);
 
@@ -366,9 +331,6 @@ test.describe("access_token — JWT claim validation", () => {
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     const tokens = await obtainTokens(page, request);
     const { payload } = decodeJwt(tokens.access_token as string);
 
@@ -381,9 +343,6 @@ test.describe("access_token — JWT claim validation", () => {
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     const tokens = await obtainTokens(page, request);
     const { payload } = decodeJwt(tokens.access_token as string);
 
@@ -474,9 +433,6 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Arrange — obtain tokens and JWKS in parallel-friendly sequence.
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
@@ -517,9 +473,6 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -552,9 +505,6 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -588,9 +538,6 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Arrange — fetch the expected issuer.
     const discoveryResponse = await request.get(
       "/.well-known/openid-configuration"
@@ -629,9 +576,6 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     await page.goto(buildAuthorizeUrl({ nonce: "test-nonce-value" }));
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -667,9 +611,6 @@ test.describe("id_token — JWKS signature verification and claim validation", (
 
 test.describe("Authorization Code Flow — error cases", () => {
   test("returns error when client_id is invalid", async ({ request }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Act — send an authorization request with an unknown client_id.
     const params = new URLSearchParams({
       response_type: "code",
@@ -690,9 +631,6 @@ test.describe("Authorization Code Flow — error cases", () => {
   test("returns error when redirect_uri does not match registered URI", async ({
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Act — use a redirect_uri that has not been registered for the client.
     const params = new URLSearchParams({
       response_type: "code",
@@ -712,9 +650,6 @@ test.describe("Authorization Code Flow — error cases", () => {
   test("token endpoint returns error when authorization code is invalid", async ({
     request,
   }) => {
-    // TODO: Activate when DLD-584 is implemented
-    test.skip();
-
     // Act — attempt to exchange a fabricated / already-used code.
     const tokenResponse = await request.post("/oauth2/token", {
       form: {

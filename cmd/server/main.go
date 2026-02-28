@@ -13,6 +13,7 @@ import (
 	"github.com/dlddu/my-auth/internal/database"
 	"github.com/dlddu/my-auth/internal/handler"
 	"github.com/dlddu/my-auth/internal/keygen"
+	"github.com/dlddu/my-auth/internal/storage"
 )
 
 func main() {
@@ -82,15 +83,13 @@ func main() {
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
 
-	r.Get("/oauth2/auth", func(w http.ResponseWriter, r *http.Request) {
-		if !handler.IsAuthenticated(r, db, cfg.SessionSecret) {
-			http.Redirect(w, r, "/login?return_to=/oauth2/auth", http.StatusFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("authorized"))
-	})
+	// OAuth2 / OIDC endpoints.
+	store := storage.New(db)
+	provider := handler.NewOAuth2Provider(store, cfg, privateKey)
+	authzHandler := handler.NewAuthorizeHandler(provider, cfg, db)
+	r.Get("/oauth2/auth", authzHandler)
+	r.Post("/oauth2/auth", authzHandler)
+	r.Post("/oauth2/token", handler.NewTokenHandler(provider))
 
 	// 5. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
