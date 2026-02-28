@@ -121,7 +121,7 @@ func buildFositeProvider(cfg *config.Config, privateKey *rsa.PrivateKey, store *
 		fositeConfig,
 		store,
 		&compose.CommonStrategy{
-			CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConfig),
+			CoreStrategy:               compose.NewOAuth2JWTStrategy(keyGetter, compose.NewOAuth2HMACStrategy(fositeConfig), fositeConfig),
 			OpenIDConnectTokenStrategy: compose.NewOpenIDConnectStrategy(keyGetter, fositeConfig),
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
