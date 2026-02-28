@@ -165,11 +165,6 @@ test.describe("Authorization Code Flow — full happy path", () => {
       }
     });
 
-    // Intercept the callback URL so the page loads even without a real server.
-    await page.route(/localhost:9999\/callback/, (route) =>
-      route.fulfill({ status: 200, body: "ok" })
-    );
-
     // Act — Step 1: initiate the authorization request.
     await page.goto(buildAuthorizeUrl());
 
@@ -180,15 +175,16 @@ test.describe("Authorization Code Flow — full happy path", () => {
 
     // Act — Step 3: approve the consent screen if one is presented.
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
-    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    await page.waitForURL(/\/consent/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
     // Assert — the browser must have been redirected to the callback URI
     // with a `code` query parameter and matching `state`.
-    await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
-    callbackUrl = page.url();
+    // Wait for the browser to attempt the callback request (no server needed).
+    await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    // callbackUrl was already captured by the page.on("request") handler above.
 
     expect(callbackUrl).toContain("code=");
     expect(callbackUrl).toContain("state=test-state-value");
@@ -203,24 +199,19 @@ test.describe("Authorization Code Flow — full happy path", () => {
     request,
   }) => {
     // Arrange — complete the login flow to obtain a code.
-    // Intercept the callback URL so the page loads even without a real server.
-    await page.route(/localhost:9999\/callback/, (route) =>
-      route.fulfill({ status: 200, body: "ok" })
-    );
-
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
-    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    await page.waitForURL(/\/consent/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
-    await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
-    const code = new URL(page.url()).searchParams.get("code");
+    const callbackReq = await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    const code = new URL(callbackReq.url()).searchParams.get("code");
     expect(code).toBeTruthy();
 
     // Act — exchange the code at the token endpoint.
@@ -260,24 +251,19 @@ test.describe("access_token — JWT claim validation", () => {
     page: Parameters<Parameters<typeof test>[1]>[0]["page"],
     request: Parameters<Parameters<typeof test>[1]>[0]["request"]
   ): Promise<Record<string, unknown>> {
-    // Intercept the callback URL so the page loads even without a real server.
-    await page.route(/localhost:9999\/callback/, (route) =>
-      route.fulfill({ status: 200, body: "ok" })
-    );
-
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
-    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    await page.waitForURL(/\/consent/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
-    await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
-    const code = new URL(page.url()).searchParams.get("code");
+    const callbackReq = await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    const code = new URL(callbackReq.url()).searchParams.get("code");
 
     const tokenResponse = await request.post("/oauth2/token", {
       form: {
@@ -453,24 +439,19 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     request,
   }) => {
     // Arrange — obtain tokens and JWKS in parallel-friendly sequence.
-    // Intercept the callback URL so the page loads even without a real server.
-    await page.route(/localhost:9999\/callback/, (route) =>
-      route.fulfill({ status: 200, body: "ok" })
-    );
-
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
-    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    await page.waitForURL(/\/consent/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
-    await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
-    const code = new URL(page.url()).searchParams.get("code");
+    const callbackReq = await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    const code = new URL(callbackReq.url()).searchParams.get("code");
 
     const [tokenResponse, jwksResponse] = await Promise.all([
       request.post("/oauth2/token", {
@@ -499,24 +480,19 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
-    // Intercept the callback URL so the page loads even without a real server.
-    await page.route(/localhost:9999\/callback/, (route) =>
-      route.fulfill({ status: 200, body: "ok" })
-    );
-
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
-    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    await page.waitForURL(/\/consent/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
-    await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
-    const code = new URL(page.url()).searchParams.get("code");
+    const callbackReq = await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    const code = new URL(callbackReq.url()).searchParams.get("code");
 
     const tokenResponse = await request.post("/oauth2/token", {
       form: {
@@ -538,24 +514,19 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
-    // Intercept the callback URL so the page loads even without a real server.
-    await page.route(/localhost:9999\/callback/, (route) =>
-      route.fulfill({ status: 200, body: "ok" })
-    );
-
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
-    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    await page.waitForURL(/\/consent/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
-    await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
-    const code = new URL(page.url()).searchParams.get("code");
+    const callbackReq = await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    const code = new URL(callbackReq.url()).searchParams.get("code");
 
     const tokenResponse = await request.post("/oauth2/token", {
       form: {
@@ -585,24 +556,19 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     const discovery = await discoveryResponse.json();
     const expectedIssuer: string = discovery.issuer;
 
-    // Intercept the callback URL so the page loads even without a real server.
-    await page.route(/localhost:9999\/callback/, (route) =>
-      route.fulfill({ status: 200, body: "ok" })
-    );
-
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
-    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    await page.waitForURL(/\/consent/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
-    await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
-    const code = new URL(page.url()).searchParams.get("code");
+    const callbackReq = await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    const code = new URL(callbackReq.url()).searchParams.get("code");
 
     const tokenResponse = await request.post("/oauth2/token", {
       form: {
@@ -623,24 +589,19 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
-    // Intercept the callback URL so the page loads even without a real server.
-    await page.route(/localhost:9999\/callback/, (route) =>
-      route.fulfill({ status: 200, body: "ok" })
-    );
-
     await page.goto(buildAuthorizeUrl({ nonce: "test-nonce-value" }));
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
     await page.locator('button[type="submit"]').click();
 
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
-    await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    await page.waitForURL(/\/consent/, { timeout: 10_000 });
     if (page.url().includes("/consent")) {
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
     }
 
-    await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
-    const code = new URL(page.url()).searchParams.get("code");
+    const callbackReq = await page.waitForRequest((req) => req.url().includes("localhost:9999/callback"), { timeout: 10_000 });
+    const code = new URL(callbackReq.url()).searchParams.get("code");
 
     const tokenResponse = await request.post("/oauth2/token", {
       form: {
