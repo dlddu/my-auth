@@ -181,14 +181,31 @@ test.describe("Authorization Code Flow — full happy path", () => {
     // Act — Step 3: approve the consent screen if one is presented.
     // Wait for the redirect chain (login → /oauth2/auth → /consent) to settle.
     await page.waitForURL(/consent|localhost:9999\/callback/, { timeout: 10_000 });
+    console.log("[DEBUG] After login redirect, page URL:", page.url());
+
     if (page.url().includes("/consent")) {
+      console.log("[DEBUG] On consent page, clicking Approve");
+      // Log page content for debugging
+      const pageContent = await page.content();
+      console.log("[DEBUG] Consent page form action:", pageContent.match(/action="([^"]+)"/)?.[1] || "NOT FOUND");
+
+      // Listen for all responses after clicking
+      page.on("response", (resp) => {
+        console.log("[DEBUG] Response:", resp.status(), resp.url(), resp.headers()["location"] || "");
+      });
+
       await page.locator('button[type="submit"], button:has-text("Allow"), button:has-text("Approve")').click();
+
+      // Wait a bit and log the page URL
+      await page.waitForTimeout(3000);
+      console.log("[DEBUG] After approve click (3s wait), page URL:", page.url());
     }
 
     // Assert — the browser must have been redirected to the callback URI
     // with a `code` query parameter and matching `state`.
     await page.waitForURL(/localhost:9999\/callback/, { timeout: 10_000 });
     callbackUrl = page.url();
+    console.log("[DEBUG] Callback URL:", callbackUrl);
 
     expect(callbackUrl).toContain("code=");
     expect(callbackUrl).toContain("state=test-state-value");
