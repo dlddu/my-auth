@@ -21,7 +21,7 @@
     </div>
     {{end}}
 
-    <form id="consent-form" method="POST" action="/oauth2/auth?{{.QueryString}}">
+    <form id="consent-form" method="POST" action="/consent?{{.QueryString}}">
         <input type="hidden" id="consent-action" name="action" value="approve">
         <div style="display:flex;gap:0.75rem;margin-top:0.5rem;">
             <button type="button"
