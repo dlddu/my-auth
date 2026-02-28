@@ -21,13 +21,15 @@
     </div>
     {{end}}
 
-    <form method="POST" action="/consent?{{.QueryString}}">
+    <form id="consent-form" method="POST" action="/consent?{{.QueryString}}">
+        <input type="hidden" id="consent-action" name="action" value="approve">
         <div style="display:flex;gap:0.75rem;margin-top:0.5rem;">
-            <button type="submit" name="action" value="deny"
+            <button type="button"
+                onclick="document.getElementById('consent-action').value='deny';document.getElementById('consent-form').submit();"
                 style="flex:1;padding:0.625rem;background-color:#374151;color:#F9FAFB;border:none;border-radius:0.375rem;font-size:1rem;cursor:pointer;">
                 Deny
             </button>
-            <button type="submit" name="action" value="approve"
+            <button type="submit"
                 style="flex:1;padding:0.625rem;background-color:#6366F1;color:#F9FAFB;border:none;border-radius:0.375rem;font-size:1rem;cursor:pointer;">
                 Approve
             </button>
