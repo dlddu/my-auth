@@ -165,6 +165,11 @@ test.describe("Authorization Code Flow — full happy path", () => {
       }
     });
 
+    // Intercept the callback URL so the page loads even without a real server.
+    await page.route(/localhost:9999\/callback/, (route) =>
+      route.fulfill({ status: 200, body: "ok" })
+    );
+
     // Act — Step 1: initiate the authorization request.
     await page.goto(buildAuthorizeUrl());
 
@@ -198,6 +203,11 @@ test.describe("Authorization Code Flow — full happy path", () => {
     request,
   }) => {
     // Arrange — complete the login flow to obtain a code.
+    // Intercept the callback URL so the page loads even without a real server.
+    await page.route(/localhost:9999\/callback/, (route) =>
+      route.fulfill({ status: 200, body: "ok" })
+    );
+
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -250,6 +260,11 @@ test.describe("access_token — JWT claim validation", () => {
     page: Parameters<Parameters<typeof test>[1]>[0]["page"],
     request: Parameters<Parameters<typeof test>[1]>[0]["request"]
   ): Promise<Record<string, unknown>> {
+    // Intercept the callback URL so the page loads even without a real server.
+    await page.route(/localhost:9999\/callback/, (route) =>
+      route.fulfill({ status: 200, body: "ok" })
+    );
+
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -438,6 +453,11 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     request,
   }) => {
     // Arrange — obtain tokens and JWKS in parallel-friendly sequence.
+    // Intercept the callback URL so the page loads even without a real server.
+    await page.route(/localhost:9999\/callback/, (route) =>
+      route.fulfill({ status: 200, body: "ok" })
+    );
+
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -479,6 +499,11 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
+    // Intercept the callback URL so the page loads even without a real server.
+    await page.route(/localhost:9999\/callback/, (route) =>
+      route.fulfill({ status: 200, body: "ok" })
+    );
+
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -513,6 +538,11 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
+    // Intercept the callback URL so the page loads even without a real server.
+    await page.route(/localhost:9999\/callback/, (route) =>
+      route.fulfill({ status: 200, body: "ok" })
+    );
+
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -555,6 +585,11 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     const discovery = await discoveryResponse.json();
     const expectedIssuer: string = discovery.issuer;
 
+    // Intercept the callback URL so the page loads even without a real server.
+    await page.route(/localhost:9999\/callback/, (route) =>
+      route.fulfill({ status: 200, body: "ok" })
+    );
+
     await page.goto(buildAuthorizeUrl());
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
@@ -588,6 +623,11 @@ test.describe("id_token — JWKS signature verification and claim validation", (
     page,
     request,
   }) => {
+    // Intercept the callback URL so the page loads even without a real server.
+    await page.route(/localhost:9999\/callback/, (route) =>
+      route.fulfill({ status: 200, body: "ok" })
+    );
+
     await page.goto(buildAuthorizeUrl({ nonce: "test-nonce-value" }));
     await page.locator('input[type="email"], input[name="email"], input[name="username"]').fill("admin@test.local");
     await page.locator('input[type="password"]').fill("test-password");
