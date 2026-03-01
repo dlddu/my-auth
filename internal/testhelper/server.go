@@ -15,6 +15,7 @@ import (
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
 	"github.com/ory/fosite/token/jwt"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
@@ -30,6 +31,18 @@ const testClientID = "test-client"
 // testRedirectURI is the registered redirect URI for the test client.
 // It matches the value used by e2e/authorize.spec.ts (VALID_REDIRECT_URI).
 const testRedirectURI = "http://localhost:9000/callback"
+
+// testClientSecretHash is the bcrypt hash of "test-client-secret" with MinCost.
+// Pre-computed once at package initialisation to avoid expensive bcrypt work in
+// every test setup. fosite calls bcrypt.CompareHashAndPassword when verifying
+// the client secret, so the stored value must be a valid bcrypt hash.
+var testClientSecretHash = func() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("test-client-secret"), bcrypt.MinCost)
+	if err != nil {
+		panic("testhelper: bcrypt.GenerateFromPassword for test client secret: " + err.Error())
+	}
+	return h
+}()
 
 // NewTestServer creates a minimal httptest.Server backed by a temporary SQLite
 // database and returns both the server and a pre-configured *http.Client.
@@ -95,7 +108,7 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 	client := &fosite.DefaultOpenIDConnectClient{
 		DefaultClient: &fosite.DefaultClient{
 			ID:            testClientID,
-			Secret:        []byte("test-client-secret"),
+			Secret:        testClientSecretHash,
 			RedirectURIs:  []string{testRedirectURI},
 			GrantTypes:    fosite.Arguments{"authorization_code"},
 			ResponseTypes: fosite.Arguments{"code"},

@@ -16,6 +16,7 @@ import (
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
 	josejwt "github.com/ory/fosite/token/jwt"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
@@ -23,6 +24,20 @@ import (
 	"github.com/dlddu/my-auth/internal/keygen"
 	"github.com/dlddu/my-auth/internal/storage"
 )
+
+// testClientSecretHash is the bcrypt hash of "test-secret" (the E2E client
+// secret defined in e2e/token.spec.ts as VALID_CLIENT_SECRET).
+// Pre-computed once at package initialisation so that seedTestClient does not
+// perform expensive bcrypt work on every server start. fosite's built-in
+// BCrypt hasher calls bcrypt.CompareHashAndPassword when authenticating
+// clients, so the stored Secret must be a valid bcrypt hash — not plaintext.
+var testClientSecretHash = func() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	if err != nil {
+		panic("my-auth: bcrypt.GenerateFromPassword for test client secret: " + err.Error())
+	}
+	return h
+}()
 
 func main() {
 	// 1. config 로드
@@ -182,7 +197,7 @@ func seedTestClient(store *storage.Store) error {
 	client := &fosite.DefaultOpenIDConnectClient{
 		DefaultClient: &fosite.DefaultClient{
 			ID:            "test-client",
-			Secret:        []byte("test-secret"),
+			Secret:        testClientSecretHash,
 			RedirectURIs:  []string{"http://localhost:9000/callback"},
 			GrantTypes:    []string{"authorization_code"},
 			ResponseTypes: []string{"code"},
