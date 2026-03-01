@@ -60,10 +60,24 @@ func NewAuthorizeHandler(provider fosite.OAuth2Provider, cfg *config.Config, db 
 }
 
 // handleAuthorizeGet handles GET /oauth2/auth.
-// Unauthenticated requests are redirected to /login with return_to set to the
-// full original URL including query string. Authenticated requests are handed
-// off to fosite for validation; on success the consent page is rendered.
+// The request is first validated by fosite (client_id, redirect_uri, etc.).
+// Invalid requests receive a fosite error response immediately regardless of
+// authentication state. Only after successful fosite validation is the session
+// checked; unauthenticated users are then redirected to /login with return_to
+// set to the full original URL including query string.
 func handleAuthorizeGet(w http.ResponseWriter, r *http.Request, provider fosite.OAuth2Provider, cfg *config.Config, db *sql.DB) {
+	ctx := r.Context()
+
+	// 1. Validate the OAuth2 request parameters (client_id, redirect_uri, …)
+	// before checking authentication so that malicious redirect_uri values
+	// are rejected and never forwarded to the login page.
+	ar, err := provider.NewAuthorizeRequest(ctx, r)
+	if err != nil {
+		provider.WriteAuthorizeError(ctx, w, ar, err)
+		return
+	}
+
+	// 2. Require an authenticated session; redirect to /login if absent.
 	if !IsAuthenticated(r, db, cfg.SessionSecret) {
 		// Preserve the full request path + query string in return_to so that
 		// after login the user is sent back to the authorize endpoint with all
@@ -73,14 +87,6 @@ func handleAuthorizeGet(w http.ResponseWriter, r *http.Request, provider fosite.
 			originalURL = "/oauth2/auth?" + qs
 		}
 		http.Redirect(w, r, "/login?return_to="+url.QueryEscape(originalURL), http.StatusFound)
-		return
-	}
-
-	ctx := r.Context()
-
-	ar, err := provider.NewAuthorizeRequest(ctx, r)
-	if err != nil {
-		provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
 

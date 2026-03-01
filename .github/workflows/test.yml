@@ -75,11 +75,24 @@ jobs:
       - name: Build Go server
         run: go build -o bin/my-auth ./cmd/server
 
+      - name: Create test config
+        run: |
+          printf '%s\n' \
+            'issuer: "https://auth.test.local"' \
+            'port: 8080' \
+            'owner:' \
+            '  username: "admin@test.local"' \
+            '  password_hash: "$2a$12$f9hwtKC5D99r4BOC0UJwM.To6001PN8CS4TEVUEH.IQOGoPWuPZvy"' \
+            'jwt_key_path: "keys/private.pem"' \
+            > config.yaml
+
       - name: Start Go server in background
         # Run the built binary in the background. Playwright's webServer.url
         # probe will confirm the server is ready before tests start.
         # The process is terminated automatically when the job runner exits.
-        run: ./bin/my-auth &
+        # SEED_TEST_CLIENT=1 causes main.go to insert the well-known test-client
+        # into the database so that E2E authorize tests can use it.
+        run: SEED_TEST_CLIENT=1 ./bin/my-auth &
 
       - name: Run Playwright e2e tests
         # CI=true causes playwright.config.ts to set reuseExistingServer: false,

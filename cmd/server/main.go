@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -83,6 +84,16 @@ func main() {
 
 	store := storage.New(db)
 
+	// When SEED_TEST_CLIENT=1 is set (CI environment), register a predictable
+	// test client so that E2E tests can use a stable client_id / redirect_uri
+	// without requiring a separate client-management API.
+	if os.Getenv("SEED_TEST_CLIENT") == "1" {
+		if err := seedTestClient(store); err != nil {
+			fmt.Fprintf(os.Stderr, "my-auth: seed test client: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	jwtStrategy := &josejwt.DefaultSigner{
 		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
 			return privateKey, nil
@@ -150,4 +161,42 @@ func deriveGlobalSecret(s string) []byte {
 	b := make([]byte, size)
 	copy(b, []byte(s))
 	return b
+}
+
+// seedTestClient inserts the well-known E2E test client into the store.
+// It is idempotent: if the client already exists, the error is silently
+// ignored so that the server can be restarted without failure.
+func seedTestClient(store *storage.Store) error {
+	client := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "test-client",
+			Secret:        []byte("test-secret"),
+			RedirectURIs:  []string{"http://localhost:9000/callback"},
+			GrantTypes:    []string{"authorization_code"},
+			ResponseTypes: []string{"code"},
+			Scopes:        []string{"openid", "profile", "email"},
+		},
+	}
+	err := store.CreateClient(context.Background(), client)
+	if err != nil {
+		// Ignore "already exists" / UNIQUE constraint violations so that
+		// repeated server starts in CI do not cause a fatal exit.
+		if isUniqueConstraintError(err) {
+			return nil
+		}
+		return err
+	}
+	fmt.Fprintln(os.Stdout, "my-auth: seeded test-client")
+	return nil
+}
+
+// isUniqueConstraintError reports whether err represents a SQLite UNIQUE
+// constraint violation, which is the expected error when the test client has
+// already been seeded.
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") || strings.Contains(msg, "already exists")
 }
