@@ -54,13 +54,15 @@ var _ openid.OpenIDConnectRequestStorage = (*Store)(nil)
 // requestJSON is an intermediate representation used to marshal/unmarshal a
 // fosite.Requester into a single JSON blob stored in the request_data column.
 type requestJSON struct {
-	ClientID       string              `json:"client_id"`
-	RequestedAt    time.Time           `json:"requested_at"`
-	GrantedScope   fosite.Arguments    `json:"granted_scope"`
-	RequestedScope fosite.Arguments    `json:"requested_scope"`
-	Form           map[string][]string `json:"form"`
-	Session        json.RawMessage     `json:"session"`
-	ID             string              `json:"id"`
+	ClientID          string              `json:"client_id"`
+	RequestedAt       time.Time           `json:"requested_at"`
+	GrantedScope      fosite.Arguments    `json:"granted_scope"`
+	RequestedScope    fosite.Arguments    `json:"requested_scope"`
+	GrantedAudience   fosite.Arguments    `json:"granted_audience"`
+	RequestedAudience fosite.Arguments    `json:"requested_audience"`
+	Form              map[string][]string `json:"form"`
+	Session           json.RawMessage     `json:"session"`
+	ID                string              `json:"id"`
 }
 
 func marshalRequester(req fosite.Requester) (string, error) {
@@ -70,12 +72,14 @@ func marshalRequester(req fosite.Requester) (string, error) {
 	}
 
 	rj := requestJSON{
-		ClientID:       req.GetClient().GetID(),
-		RequestedAt:    req.GetRequestedAt(),
-		GrantedScope:   req.GetGrantedScopes(),
-		RequestedScope: req.GetRequestedScopes(),
-		Session:        sessBytes,
-		ID:             req.GetID(),
+		ClientID:          req.GetClient().GetID(),
+		RequestedAt:       req.GetRequestedAt(),
+		GrantedScope:      req.GetGrantedScopes(),
+		RequestedScope:    req.GetRequestedScopes(),
+		GrantedAudience:   req.GetGrantedAudience(),
+		RequestedAudience: req.GetRequestedAudience(),
+		Session:           sessBytes,
+		ID:                req.GetID(),
 	}
 	if ar, ok := req.(*fosite.AuthorizeRequest); ok {
 		rj.Form = map[string][]string(ar.Form)
@@ -105,13 +109,15 @@ func unmarshalRequester(data string, session fosite.Session, client fosite.Clien
 	form := url.Values(rj.Form)
 
 	req := &fosite.Request{
-		ID:             rj.ID,
-		Client:         client,
-		RequestedAt:    rj.RequestedAt,
-		GrantedScope:   rj.GrantedScope,
-		RequestedScope: rj.RequestedScope,
-		Session:        session,
-		Form:           form,
+		ID:                rj.ID,
+		Client:            client,
+		RequestedAt:       rj.RequestedAt,
+		GrantedScope:      rj.GrantedScope,
+		RequestedScope:    rj.RequestedScope,
+		GrantedAudience:   rj.GrantedAudience,
+		RequestedAudience: rj.RequestedAudience,
+		Session:           session,
+		Form:              form,
 	}
 	return req, nil
 }
