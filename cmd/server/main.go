@@ -2,17 +2,25 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ory/fosite"
+	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/handler/openid"
+	josejwt "github.com/ory/fosite/token/jwt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
 	"github.com/dlddu/my-auth/internal/handler"
 	"github.com/dlddu/my-auth/internal/keygen"
+	"github.com/dlddu/my-auth/internal/storage"
 )
 
 func main() {
@@ -60,7 +68,55 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 4. 라우터 설정
+	// 4. fosite OAuth2 provider 초기화
+	// GlobalSecret は正確に 32 バイト必要。SessionSecret が短い場合はパッドする。
+	globalSecret := deriveGlobalSecret(cfg.SessionSecret)
+
+	fositeConf := &fosite.Config{
+		GlobalSecret:               globalSecret,
+		AuthorizeCodeLifespan:      10 * time.Minute,
+		AccessTokenLifespan:        1 * time.Hour,
+		RefreshTokenLifespan:       24 * time.Hour,
+		IDTokenLifespan:            1 * time.Hour,
+		IDTokenIssuer:              cfg.Issuer,
+		SendDebugMessagesToClients: false,
+	}
+
+	store := storage.New(db)
+
+	// When SEED_TEST_CLIENT=1 is set (CI environment), register a predictable
+	// test client so that E2E tests can use a stable client_id / redirect_uri
+	// without requiring a separate client-management API.
+	if os.Getenv("SEED_TEST_CLIENT") == "1" {
+		if err := seedTestClient(store); err != nil {
+			fmt.Fprintf(os.Stderr, "my-auth: seed test client: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	jwtStrategy := &josejwt.DefaultSigner{
+		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
+			return privateKey, nil
+		},
+	}
+
+	openIDStrategy := &openid.DefaultStrategy{
+		Signer: jwtStrategy,
+		Config: fositeConf,
+	}
+
+	oauth2Provider := compose.Compose(
+		fositeConf,
+		store,
+		&compose.CommonStrategy{
+			CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConf),
+			OpenIDConnectTokenStrategy: openIDStrategy,
+		},
+		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OpenIDConnectExplicitFactory,
+	)
+
+	// 5. 라우터 설정
 	r := chi.NewRouter()
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -82,17 +138,11 @@ func main() {
 	r.Get("/login", loginHandler)
 	r.Post("/login", loginHandler)
 
-	r.Get("/oauth2/auth", func(w http.ResponseWriter, r *http.Request) {
-		if !handler.IsAuthenticated(r, db, cfg.SessionSecret) {
-			http.Redirect(w, r, "/login?return_to=/oauth2/auth", http.StatusFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("authorized"))
-	})
+	authorizeHandler := handler.NewAuthorizeHandler(oauth2Provider, cfg, db)
+	r.Get("/oauth2/auth", authorizeHandler)
+	r.Post("/oauth2/auth", authorizeHandler)
 
-	// 5. 서버 시작
+	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	fmt.Fprintf(os.Stdout, "my-auth: listening on %s\n", addr)
 
@@ -100,4 +150,53 @@ func main() {
 		fmt.Fprintf(os.Stderr, "my-auth: server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// deriveGlobalSecret returns a 32-byte secret derived from the provided string.
+// fosite requires exactly 32 bytes for its HMAC-based token strategy.
+// If the input is shorter than 32 bytes it is right-padded with zeros.
+// If longer it is truncated to 32 bytes.
+func deriveGlobalSecret(s string) []byte {
+	const size = 32
+	b := make([]byte, size)
+	copy(b, []byte(s))
+	return b
+}
+
+// seedTestClient inserts the well-known E2E test client into the store.
+// It is idempotent: if the client already exists, the error is silently
+// ignored so that the server can be restarted without failure.
+func seedTestClient(store *storage.Store) error {
+	client := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "test-client",
+			Secret:        []byte("test-secret"),
+			RedirectURIs:  []string{"http://localhost:9000/callback"},
+			GrantTypes:    []string{"authorization_code"},
+			ResponseTypes: []string{"code"},
+			Scopes:        []string{"openid", "profile", "email"},
+		},
+	}
+	err := store.CreateClient(context.Background(), client)
+	if err != nil {
+		// Ignore "already exists" / UNIQUE constraint violations so that
+		// repeated server starts in CI do not cause a fatal exit.
+		if isUniqueConstraintError(err) {
+			return nil
+		}
+		return err
+	}
+	fmt.Fprintln(os.Stdout, "my-auth: seeded test-client")
+	return nil
+}
+
+// isUniqueConstraintError reports whether err represents a SQLite UNIQUE
+// constraint violation, which is the expected error when the test client has
+// already been seeded.
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") || strings.Contains(msg, "already exists")
 }

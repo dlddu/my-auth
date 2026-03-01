@@ -474,3 +474,43 @@ func (s *Store) DeleteOpenIDConnectSession(ctx context.Context, authorizeCode st
 		`DELETE FROM sessions WHERE id = ?`, authorizeCode)
 	return err
 }
+
+// ---------------------------------------------------------------------------
+// oauth2.TokenRevocationStorage
+// ---------------------------------------------------------------------------
+
+// RevokeRefreshToken deletes all refresh tokens for the given request ID.
+// This implements the RFC 7009 token revocation requirement.
+func (s *Store) RevokeRefreshToken(ctx context.Context, requestID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM refresh_tokens WHERE signature IN (
+			SELECT signature FROM refresh_tokens WHERE request_data LIKE ?)`,
+		`%"`+requestID+`"%`)
+	return err
+}
+
+// RevokeAccessToken deletes all access tokens for the given request ID.
+// This implements the RFC 7009 token revocation requirement.
+func (s *Store) RevokeAccessToken(ctx context.Context, requestID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM tokens WHERE request_id = ?`, requestID)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// fosite.ClientManager — JWT assertion replay prevention
+// ---------------------------------------------------------------------------
+
+// ClientAssertionJWTValid returns nil because this server does not use
+// private_key_jwt client authentication; replay prevention is therefore
+// not required. Fosite calls this method as part of the ClientManager
+// interface, so a no-op implementation is sufficient.
+func (s *Store) ClientAssertionJWTValid(_ context.Context, _ string) error {
+	return nil
+}
+
+// SetClientAssertionJWT is a no-op because this server does not use
+// private_key_jwt client authentication.
+func (s *Store) SetClientAssertionJWT(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}

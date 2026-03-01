@@ -273,7 +273,16 @@ func TestLoginHandler_SessionCookieMaintainsAuthState(t *testing.T) {
 
 	// Step 2: 같은 클라이언트(쿠키 자동 유지)로 보호된 엔드포인트 접근
 	// /oauth2/auth 엔드포인트는 인증이 필요한 OAuth2 인가 엔드포인트이다
-	protectedResp, err := client.Get(srv.URL + "/oauth2/auth")
+	// 올바른 OAuth2 파라미터를 포함해야 fosite가 401(invalid_client)이 아닌
+	// 200 consent 페이지를 반환한다.
+	authParams := url.Values{
+		"response_type": {"code"},
+		"client_id":     {"test-client"},
+		"redirect_uri":  {"http://localhost:9000/callback"},
+		"scope":         {"openid profile email"},
+		"state":         {"test-state"},
+	}.Encode()
+	protectedResp, err := client.Get(srv.URL + "/oauth2/auth?" + authParams)
 	if err != nil {
 		t.Fatalf("GET /oauth2/auth: %v", err)
 	}
