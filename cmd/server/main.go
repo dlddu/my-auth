@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -82,8 +83,10 @@ func main() {
 
 	store := storage.New(db)
 
-	jwtStrategy := &josejwt.RS256JWTStrategy{
-		PrivateKey: privateKey,
+	jwtStrategy := &josejwt.DefaultSigner{
+		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
+			return privateKey, nil
+		},
 	}
 
 	openIDStrategy := &openid.DefaultStrategy{

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/ory/fosite"
@@ -71,7 +72,7 @@ func handleAuthorizeGet(w http.ResponseWriter, r *http.Request, provider fosite.
 		if qs := r.URL.RawQuery; qs != "" {
 			originalURL = "/oauth2/auth?" + qs
 		}
-		http.Redirect(w, r, "/login?return_to="+originalURL, http.StatusFound)
+		http.Redirect(w, r, "/login?return_to="+url.QueryEscape(originalURL), http.StatusFound)
 		return
 	}
 

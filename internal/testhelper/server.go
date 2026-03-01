@@ -129,8 +129,10 @@ func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa
 	fositeConf := fositeTestConfig(cfg)
 
 	// RS256 JWT strategy for signing OIDC ID tokens.
-	jwtStrategy := &jwt.RS256JWTStrategy{
-		PrivateKey: privateKey,
+	jwtStrategy := &jwt.DefaultSigner{
+		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
+			return privateKey, nil
+		},
 	}
 
 	// OpenID Connect strategy wraps the JWT strategy.
