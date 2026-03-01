@@ -226,7 +226,7 @@ func seedTestClient(store *storage.Store) error {
 			RedirectURIs:  []string{"http://localhost:9000/callback"},
 			GrantTypes:    []string{"authorization_code", "refresh_token"},
 			ResponseTypes: []string{"code"},
-			Scopes:        []string{"openid", "profile", "email"},
+			Scopes:        []string{"openid", "profile", "email", "read", "write"},
 		},
 		TokenEndpointAuthMethod: "client_secret_basic",
 	}

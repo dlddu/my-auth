@@ -119,7 +119,7 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 			RedirectURIs:  []string{testRedirectURI},
 			GrantTypes:    fosite.Arguments{"authorization_code", "refresh_token"},
 			ResponseTypes: fosite.Arguments{"code"},
-			Scopes:        fosite.Arguments{"openid", "profile", "email"},
+			Scopes:        fosite.Arguments{"openid", "profile", "email", "read", "write"},
 		},
 		TokenEndpointAuthMethod: "client_secret_basic",
 	}
