@@ -189,6 +189,7 @@ func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa
 			OpenIDConnectTokenStrategy: openIDStrategy,
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
 	)
 }
