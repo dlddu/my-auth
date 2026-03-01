@@ -136,36 +136,43 @@ test.describe("Consent page UI", () => {
 test.describe("POST /oauth2/auth — approve", () => {
   test(
     "redirects to callback URL with code parameter after user approves",
-    async ({ page }) => {
-      // Arrange — log in first.
+    async ({ page, context }) => {
+      // Arrange — log in first via the browser to establish a session cookie.
       await page.goto("/login");
       await page.getByLabel("Email").fill("admin@test.local");
       await page.getByLabel("Password").fill("test-password");
       await page.getByRole("button", { name: /log\s*in/i }).click();
 
-      // Navigate to the consent page.
+      // Navigate to the consent page to confirm it renders (prerequisite).
       await page.goto(authQuery());
+      await expect(
+        page.getByRole("button", { name: /승인|approve/i })
+      ).toBeVisible();
 
-      // Set up a route handler to intercept navigation to the redirect URI
-      // (localhost:9000). The route must be fully registered (awaited) before
-      // clicking the button to avoid a race condition.
-      let resolveRedirect!: (url: string) => void;
-      const redirectUrl = new Promise<string>((resolve) => {
-        resolveRedirect = resolve;
+      // Extract cookies from the browser context to use with the API request.
+      const cookies = await context.cookies();
+      const cookieHeader = cookies
+        .map((c) => `${c.name}=${c.value}`)
+        .join("; ");
+
+      // Act — send the approve POST directly via the API request context,
+      // disabling redirects so we can inspect the 302 response.
+      const response = await page.request.post(authQuery(), {
+        headers: {
+          cookie: cookieHeader,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        data: "action=approve",
+        maxRedirects: 0,
       });
 
-      await page.route("http://localhost:9000/**", (route) => {
-        resolveRedirect(route.request().url());
-        route.abort();
-      });
+      // Assert — must be a redirect (302 or 303).
+      expect([302, 303]).toContain(response.status());
 
-      // Act — click the approve button, which submits POST /oauth2/auth.
-      await page.getByRole("button", { name: /승인|approve/i }).click();
+      const location = response.headers()["location"] ?? "";
+      expect(location).toContain(VALID_REDIRECT_URI);
 
-      // Assert — the server must have redirected to the client's redirect_uri
-      // carrying the authorization code.
-      const url = await redirectUrl;
-      const redirected = new URL(url);
+      const redirected = new URL(location);
       expect(redirected.searchParams.get("code")).toBeTruthy();
       expect(redirected.searchParams.get("state")).toBe(VALID_STATE);
     }
@@ -179,34 +186,42 @@ test.describe("POST /oauth2/auth — approve", () => {
 test.describe("POST /oauth2/auth — deny", () => {
   test(
     "returns access_denied error after user denies consent",
-    async ({ page }) => {
-      // Arrange — log in first.
+    async ({ page, context }) => {
+      // Arrange — log in first via the browser to establish a session cookie.
       await page.goto("/login");
       await page.getByLabel("Email").fill("admin@test.local");
       await page.getByLabel("Password").fill("test-password");
       await page.getByRole("button", { name: /log\s*in/i }).click();
 
-      // Navigate to the consent page.
+      // Navigate to the consent page to confirm it renders (prerequisite).
       await page.goto(authQuery());
+      await expect(
+        page.getByRole("button", { name: /거부|deny/i })
+      ).toBeVisible();
 
-      // Set up a route handler to intercept navigation to the redirect URI.
-      let resolveRedirect!: (url: string) => void;
-      const redirectUrl = new Promise<string>((resolve) => {
-        resolveRedirect = resolve;
+      // Extract cookies from the browser context to use with the API request.
+      const cookies = await context.cookies();
+      const cookieHeader = cookies
+        .map((c) => `${c.name}=${c.value}`)
+        .join("; ");
+
+      // Act — send the deny POST directly via the API request context.
+      const response = await page.request.post(authQuery(), {
+        headers: {
+          cookie: cookieHeader,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        data: "action=deny",
+        maxRedirects: 0,
       });
 
-      await page.route("http://localhost:9000/**", (route) => {
-        resolveRedirect(route.request().url());
-        route.abort();
-      });
+      // Assert — must be a redirect (302 or 303).
+      expect([302, 303]).toContain(response.status());
 
-      // Act — click the deny button.
-      await page.getByRole("button", { name: /거부|deny/i }).click();
+      const location = response.headers()["location"] ?? "";
+      expect(location).toContain(VALID_REDIRECT_URI);
 
-      // Assert — RFC 6749 §4.1.2.1: the server MUST redirect to redirect_uri
-      // with error=access_denied.
-      const url = await redirectUrl;
-      const redirected = new URL(url);
+      const redirected = new URL(location);
       expect(redirected.searchParams.get("error")).toBe("access_denied");
       expect(redirected.searchParams.get("state")).toBe(VALID_STATE);
     }
