@@ -50,14 +50,16 @@ func newTestStore(t *testing.T, dsn string) *storage.Store {
 // with deterministic values. The returned client is suitable for seeding the
 // store via store.CreateClient.
 func newTestClient(clientID string) *fosite.DefaultOpenIDConnectClient {
-	c := fosite.NewDefaultOpenIDConnectClient()
-	c.ID = clientID
-	c.Secret = []byte("test-client-secret")
-	c.RedirectURIs = []string{"https://client.test.local/callback"}
-	c.GrantTypes = fosite.Arguments{"authorization_code", "refresh_token"}
-	c.ResponseTypes = fosite.Arguments{"code"}
-	c.Scopes = fosite.Arguments{"openid", "profile", "email"}
-	return c
+	return &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            clientID,
+			Secret:        []byte("test-client-secret"),
+			RedirectURIs:  []string{"https://client.test.local/callback"},
+			GrantTypes:    fosite.Arguments{"authorization_code", "refresh_token"},
+			ResponseTypes: fosite.Arguments{"code"},
+			Scopes:        fosite.Arguments{"openid", "profile", "email"},
+		},
+	}
 }
 
 // newAuthorizeRequest builds a minimal *fosite.AuthorizeRequest that satisfies
