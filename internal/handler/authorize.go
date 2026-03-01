@@ -13,6 +13,7 @@ import (
 	josejwt "github.com/ory/fosite/token/jwt"
 
 	"github.com/dlddu/my-auth/internal/config"
+	"github.com/dlddu/my-auth/internal/session"
 )
 
 // consentTemplates holds the parsed consent page templates.
@@ -149,16 +150,25 @@ func handleAuthorizePost(w http.ResponseWriter, r *http.Request, provider fosite
 	// populate the OIDC session subject.
 	username := authenticatedUsername(r, db, cfg.SessionSecret)
 
-	// Build an openid.DefaultSession populated with the authenticated subject.
-	mySession := &openid.DefaultSession{
-		Claims: &josejwt.IDTokenClaims{
-			Subject:   username,
-			IssuedAt:  time.Now(),
-			ExpiresAt: time.Now().Add(1 * time.Hour),
-			Issuer:    cfg.Issuer,
+	// Build a composite Session populated with the authenticated subject.
+	// It satisfies both openid.Session (for id_token) and
+	// oauth2.JWTSessionContainer (for JWT access token).
+	mySession := &session.Session{
+		DefaultSession: &openid.DefaultSession{
+			Claims: &josejwt.IDTokenClaims{
+				Subject:   username,
+				IssuedAt:  time.Now(),
+				ExpiresAt: time.Now().Add(1 * time.Hour),
+				Issuer:    cfg.Issuer,
+			},
+			Headers: &josejwt.Headers{},
+			Subject: username,
 		},
-		Headers: &josejwt.Headers{},
-		Subject: username,
+		JWTClaims: &josejwt.JWTClaims{
+			Subject: username,
+			Issuer:  cfg.Issuer,
+		},
+		JWTHeader: &josejwt.Headers{},
 	}
 
 	response, err := provider.NewAuthorizeResponse(ctx, ar, mySession)

@@ -13,6 +13,8 @@ import (
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
+
+	"github.com/dlddu/my-auth/internal/session"
 )
 
 // Store implements the fosite storage interfaces required by the OAuth2 /
@@ -470,8 +472,10 @@ func (s *Store) GetOpenIDConnectSession(ctx context.Context, authorizeCode strin
 		return nil, err
 	}
 
-	session := &openid.DefaultSession{}
-	return unmarshalRequester(requestData, session, client)
+	sess := &session.Session{
+		DefaultSession: &openid.DefaultSession{},
+	}
+	return unmarshalRequester(requestData, sess, client)
 }
 
 // DeleteOpenIDConnectSession removes the OpenID Connect session identified by

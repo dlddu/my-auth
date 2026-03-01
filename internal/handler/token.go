@@ -4,7 +4,8 @@ import (
 	"net/http"
 
 	"github.com/ory/fosite"
-	"github.com/ory/fosite/handler/openid"
+
+	"github.com/dlddu/my-auth/internal/session"
 )
 
 // NewTokenHandler returns an http.HandlerFunc that handles POST /oauth2/token.
@@ -19,7 +20,9 @@ func NewTokenHandler(provider fosite.OAuth2Provider) http.HandlerFunc {
 
 		// Create a new session stub. fosite will populate it with the data
 		// from the authorize request session that was stored in the database.
-		mySession := new(openid.DefaultSession)
+		// session.Session satisfies both openid.Session (id_token) and
+		// oauth2.JWTSessionContainer (JWT access token).
+		mySession := new(session.Session)
 
 		// Validate client credentials, grant_type, code, redirect_uri, etc.
 		ar, err := provider.NewAccessRequest(ctx, r, mySession)
