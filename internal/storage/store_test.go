@@ -9,6 +9,10 @@
 //   - AccessTokenStorage:   Create / Get / Delete / Get-after-Delete
 //   - RefreshTokenStorage:  Create / Get / Delete / Get-after-Delete
 //   - OpenIDConnectRequestStorage: Create / Get / Delete / Get-after-Delete / Get-NotFound
+//
+// Test coverage (DLD-671):
+//   - PKCERequestStorage: Create / Get / Get-NotFound / Delete / Get-after-Delete
+//   - GetClient: public 클라이언트(is_public=true) 조회 성공, IsPublic() true, TokenEndpointAuthMethod "none"
 package storage_test
 
 import (
@@ -700,5 +704,293 @@ func TestOIDCStore_GetSession_AfterDelete(t *testing.T) {
 	}
 	if err != fosite.ErrNotFound {
 		t.Errorf("GetOpenIDConnectSession() error = %v, want fosite.ErrNotFound", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PKCERequestStorage
+// ---------------------------------------------------------------------------
+
+// TestPKCEStore_CreateSession verifies that CreatePKCERequestSession persists
+// a PKCE session without error (happy path).
+func TestPKCEStore_CreateSession(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	client := newTestClient("pkce-client-create")
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	req := newAuthorizeRequest(client)
+	signature := "test-pkce-sig-create-001"
+
+	// Act
+	err := store.CreatePKCERequestSession(ctx, signature, req)
+
+	// Assert
+	if err != nil {
+		t.Errorf("CreatePKCERequestSession() returned unexpected error: %v", err)
+	}
+}
+
+// TestPKCEStore_GetSession verifies that GetPKCERequestSession returns the
+// requester stored by CreatePKCERequestSession.
+func TestPKCEStore_GetSession(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	client := newTestClient("pkce-client-get")
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	req := newAuthorizeRequest(client)
+	signature := "test-pkce-sig-get-001"
+
+	if err := store.CreatePKCERequestSession(ctx, signature, req); err != nil {
+		t.Fatalf("CreatePKCERequestSession(): %v", err)
+	}
+
+	sess := &openid.DefaultSession{}
+
+	// Act
+	got, err := store.GetPKCERequestSession(ctx, signature, sess)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("GetPKCERequestSession() returned unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetPKCERequestSession() returned nil Requester, want non-nil")
+	}
+	if got.GetClient().GetID() != client.GetID() {
+		t.Errorf("Requester.Client.ID = %q, want %q", got.GetClient().GetID(), client.GetID())
+	}
+}
+
+// TestPKCEStore_GetSession_NotFound verifies that GetPKCERequestSession
+// returns fosite.ErrNotFound when no session exists for the given signature.
+//
+// fosite relies on this sentinel during PKCE validation to distinguish a code
+// that never had a PKCE binding from other storage errors.
+func TestPKCEStore_GetSession_NotFound(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	ctx := context.Background()
+	sess := &openid.DefaultSession{}
+	nonExistentSignature := "test-pkce-sig-does-not-exist-999"
+
+	// Act
+	_, err := store.GetPKCERequestSession(ctx, nonExistentSignature, sess)
+
+	// Assert — fosite requires ErrNotFound for a missing PKCE session.
+	if err == nil {
+		t.Fatal("GetPKCERequestSession() returned nil error for non-existent signature, want fosite.ErrNotFound")
+	}
+	if err != fosite.ErrNotFound {
+		t.Errorf("GetPKCERequestSession() error = %v, want fosite.ErrNotFound", err)
+	}
+}
+
+// TestPKCEStore_DeleteSession verifies that DeletePKCERequestSession removes
+// the PKCE session without error.
+func TestPKCEStore_DeleteSession(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	client := newTestClient("pkce-client-delete")
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	req := newAuthorizeRequest(client)
+	signature := "test-pkce-sig-delete-001"
+
+	if err := store.CreatePKCERequestSession(ctx, signature, req); err != nil {
+		t.Fatalf("CreatePKCERequestSession(): %v", err)
+	}
+
+	// Act
+	err := store.DeletePKCERequestSession(ctx, signature)
+
+	// Assert
+	if err != nil {
+		t.Errorf("DeletePKCERequestSession() returned unexpected error: %v", err)
+	}
+}
+
+// TestPKCEStore_GetSession_AfterDelete verifies that GetPKCERequestSession
+// returns fosite.ErrNotFound after the session has been deleted.
+func TestPKCEStore_GetSession_AfterDelete(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	client := newTestClient("pkce-client-del2")
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	req := newAuthorizeRequest(client)
+	signature := "test-pkce-sig-del2-001"
+
+	if err := store.CreatePKCERequestSession(ctx, signature, req); err != nil {
+		t.Fatalf("CreatePKCERequestSession(): %v", err)
+	}
+	if err := store.DeletePKCERequestSession(ctx, signature); err != nil {
+		t.Fatalf("DeletePKCERequestSession(): %v", err)
+	}
+
+	sess := &openid.DefaultSession{}
+
+	// Act
+	_, err := store.GetPKCERequestSession(ctx, signature, sess)
+
+	// Assert — a deleted PKCE session must not be found.
+	if err == nil {
+		t.Fatal("GetPKCERequestSession() after deletion returned nil error, want fosite.ErrNotFound")
+	}
+	if err != fosite.ErrNotFound {
+		t.Errorf("GetPKCERequestSession() error = %v, want fosite.ErrNotFound", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GetClient — public 클라이언트
+// ---------------------------------------------------------------------------
+
+// newPublicTestClient returns a *fosite.DefaultOpenIDConnectClient configured
+// as a public client: no secret, Public=true, TokenEndpointAuthMethod="none".
+// This matches the RFC 6749 definition of a public client (e.g. SPA or native
+// app) that cannot securely store a client secret.
+func newPublicTestClient(clientID string) *fosite.DefaultOpenIDConnectClient {
+	return &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            clientID,
+			Secret:        nil,
+			Public:        true,
+			RedirectURIs:  []string{"https://spa.test.local/callback"},
+			GrantTypes:    fosite.Arguments{"authorization_code"},
+			ResponseTypes: fosite.Arguments{"code"},
+			Scopes:        fosite.Arguments{"openid", "profile"},
+		},
+		TokenEndpointAuthMethod: "none",
+	}
+}
+
+// TestGetClient_PublicClient_RetrievedSuccessfully verifies that a public
+// client stored via CreateClient can be retrieved via GetClient without error.
+//
+// A public client has no client secret and uses TokenEndpointAuthMethod="none"
+// as mandated by RFC 6749 §2.1 and OpenID Connect Core §9.
+func TestGetClient_PublicClient_RetrievedSuccessfully(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	clientID := "public-client-retrieved"
+	client := newPublicTestClient(clientID)
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	// Act
+	got, err := store.GetClient(ctx, clientID)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("GetClient(%q): %v", clientID, err)
+	}
+	if got.GetID() != clientID {
+		t.Errorf("GetClient().GetID() = %q, want %q", got.GetID(), clientID)
+	}
+}
+
+// TestGetClient_PublicClient_IsPublicReturnsTrue verifies that a public client
+// retrieved from the store reports IsPublic() == true.
+//
+// fosite uses IsPublic() to skip client secret verification, which is the
+// correct behaviour for public clients (e.g. SPAs using PKCE).
+func TestGetClient_PublicClient_IsPublicReturnsTrue(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	clientID := "public-client-ispublic"
+	client := newPublicTestClient(clientID)
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	// Act
+	got, err := store.GetClient(ctx, clientID)
+	if err != nil {
+		t.Fatalf("GetClient(%q): %v", clientID, err)
+	}
+
+	// Assert — fosite.Client.IsPublic() must return true for public clients.
+	if !got.IsPublic() {
+		t.Errorf("GetClient(%q).IsPublic() = false, want true", clientID)
+	}
+}
+
+// TestGetClient_PublicClient_TokenEndpointAuthMethodIsNone verifies that a
+// public client retrieved from the store has TokenEndpointAuthMethod == "none".
+//
+// fosite's OpenID Connect handler checks GetTokenEndpointAuthMethod() to
+// determine which authentication scheme to apply at the token endpoint. Public
+// clients must return "none" so that fosite does not require a client secret.
+func TestGetClient_PublicClient_TokenEndpointAuthMethodIsNone(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	clientID := "public-client-authmeth"
+	client := newPublicTestClient(clientID)
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	// Act
+	got, err := store.GetClient(ctx, clientID)
+	if err != nil {
+		t.Fatalf("GetClient(%q): %v", clientID, err)
+	}
+
+	// Assert — the token endpoint auth method must be "none" for public clients.
+	oidcClient, ok := got.(interface{ GetTokenEndpointAuthMethod() string })
+	if !ok {
+		t.Fatalf("GetClient(%q) returned %T which does not implement GetTokenEndpointAuthMethod()", clientID, got)
+	}
+	if method := oidcClient.GetTokenEndpointAuthMethod(); method != "none" {
+		t.Errorf("GetTokenEndpointAuthMethod() = %q, want %q", method, "none")
 	}
 }

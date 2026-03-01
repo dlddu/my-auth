@@ -93,15 +93,16 @@ func main() {
 	globalSecret := deriveGlobalSecret(cfg.SessionSecret)
 
 	fositeConf := &fosite.Config{
-		GlobalSecret:               globalSecret,
-		AuthorizeCodeLifespan:      10 * time.Minute,
-		AccessTokenLifespan:        1 * time.Hour,
-		RefreshTokenLifespan:       24 * time.Hour,
-		IDTokenLifespan:            1 * time.Hour,
-		IDTokenIssuer:              cfg.Issuer,
-		SendDebugMessagesToClients: false,
-		JWTScopeClaimKey:           josejwt.JWTScopeFieldString,
-		RefreshTokenScopes:         []string{},
+		GlobalSecret:                globalSecret,
+		AuthorizeCodeLifespan:       10 * time.Minute,
+		AccessTokenLifespan:         1 * time.Hour,
+		RefreshTokenLifespan:        24 * time.Hour,
+		IDTokenLifespan:             1 * time.Hour,
+		IDTokenIssuer:               cfg.Issuer,
+		SendDebugMessagesToClients:  false,
+		JWTScopeClaimKey:            josejwt.JWTScopeFieldString,
+		RefreshTokenScopes:          []string{},
+		EnforcePKCEForPublicClients: true,
 	}
 
 	store := storage.New(db)
@@ -157,6 +158,7 @@ func main() {
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
+		compose.OAuth2PKCEFactory,
 	)
 
 	// 5. 라우터 설정
@@ -209,11 +211,13 @@ func deriveGlobalSecret(s string) []byte {
 	return b
 }
 
-// seedTestClient inserts the well-known E2E test client into the store.
-// It is idempotent: if the client already exists, the error is silently
+// seedTestClient inserts the well-known E2E test clients into the store.
+// It is idempotent: if a client already exists, the error is silently
 // ignored so that the server can be restarted without failure.
 func seedTestClient(store *storage.Store) error {
-	client := &fosite.DefaultOpenIDConnectClient{
+	ctx := context.Background()
+
+	confidential := &fosite.DefaultOpenIDConnectClient{
 		DefaultClient: &fosite.DefaultClient{
 			ID:            "test-client",
 			Secret:        testClientSecretHash,
@@ -224,16 +228,34 @@ func seedTestClient(store *storage.Store) error {
 		},
 		TokenEndpointAuthMethod: "client_secret_basic",
 	}
-	err := store.CreateClient(context.Background(), client)
-	if err != nil {
-		// Ignore "already exists" / UNIQUE constraint violations so that
-		// repeated server starts in CI do not cause a fatal exit.
-		if isUniqueConstraintError(err) {
-			return nil
+	if err := store.CreateClient(ctx, confidential); err != nil {
+		if !isUniqueConstraintError(err) {
+			return err
 		}
-		return err
+	} else {
+		fmt.Fprintln(os.Stdout, "my-auth: seeded test-client")
 	}
-	fmt.Fprintln(os.Stdout, "my-auth: seeded test-client")
+
+	public := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "public-client",
+			Secret:        nil,
+			Public:        true,
+			RedirectURIs:  []string{"http://localhost:9000/callback"},
+			GrantTypes:    []string{"authorization_code", "refresh_token"},
+			ResponseTypes: []string{"code"},
+			Scopes:        []string{"openid", "profile", "email"},
+		},
+		TokenEndpointAuthMethod: "none",
+	}
+	if err := store.CreateClient(ctx, public); err != nil {
+		if !isUniqueConstraintError(err) {
+			return err
+		}
+	} else {
+		fmt.Fprintln(os.Stdout, "my-auth: seeded public-client")
+	}
+
 	return nil
 }
 

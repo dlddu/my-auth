@@ -103,13 +103,16 @@ func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	return srv, client
 }
 
-// seedTestClient inserts the standard test OAuth2 client into the database.
-// The client ID matches testClientID and is used by authorize endpoint tests.
+// seedTestClient inserts the standard test OAuth2 clients into the database.
+// The confidential client ID matches testClientID and is used by authorize
+// endpoint tests. The public client supports PKCE-based flows.
 func seedTestClient(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	store := storage.New(db)
-	client := &fosite.DefaultOpenIDConnectClient{
+	ctx := context.Background()
+
+	confidential := &fosite.DefaultOpenIDConnectClient{
 		DefaultClient: &fosite.DefaultClient{
 			ID:            testClientID,
 			Secret:        testClientSecretHash,
@@ -120,9 +123,24 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 		},
 		TokenEndpointAuthMethod: "client_secret_basic",
 	}
-
-	if err := store.CreateClient(context.Background(), client); err != nil {
+	if err := store.CreateClient(ctx, confidential); err != nil {
 		t.Fatalf("testhelper: seed test client: %v", err)
+	}
+
+	public := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "public-client",
+			Secret:        nil,
+			Public:        true,
+			RedirectURIs:  []string{testRedirectURI},
+			GrantTypes:    fosite.Arguments{"authorization_code", "refresh_token"},
+			ResponseTypes: fosite.Arguments{"code"},
+			Scopes:        fosite.Arguments{"openid", "profile", "email"},
+		},
+		TokenEndpointAuthMethod: "none",
+	}
+	if err := store.CreateClient(ctx, public); err != nil {
+		t.Fatalf("testhelper: seed public client: %v", err)
 	}
 }
 
@@ -131,15 +149,16 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 // tests are deterministic.
 func fositeTestConfig(cfg *config.Config) *fosite.Config {
 	return &fosite.Config{
-		GlobalSecret:               []byte("test-global-secret-32-bytes!!!!!"),
-		AuthorizeCodeLifespan:      10 * time.Minute,
-		AccessTokenLifespan:        1 * time.Hour,
-		RefreshTokenLifespan:       24 * time.Hour,
-		IDTokenLifespan:            1 * time.Hour,
-		IDTokenIssuer:              cfg.Issuer,
-		SendDebugMessagesToClients: true,
-		JWTScopeClaimKey:           jwt.JWTScopeFieldString,
-		RefreshTokenScopes:         []string{},
+		GlobalSecret:                []byte("test-global-secret-32-bytes!!!!!"),
+		AuthorizeCodeLifespan:       10 * time.Minute,
+		AccessTokenLifespan:         1 * time.Hour,
+		RefreshTokenLifespan:        24 * time.Hour,
+		IDTokenLifespan:             1 * time.Hour,
+		IDTokenIssuer:               cfg.Issuer,
+		SendDebugMessagesToClients:  true,
+		JWTScopeClaimKey:            jwt.JWTScopeFieldString,
+		RefreshTokenScopes:          []string{},
+		EnforcePKCEForPublicClients: true,
 	}
 }
 
@@ -192,6 +211,7 @@ func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
+		compose.OAuth2PKCEFactory,
 	)
 }
 
