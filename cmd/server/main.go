@@ -101,6 +101,7 @@ func main() {
 		IDTokenIssuer:              cfg.Issuer,
 		SendDebugMessagesToClients: false,
 		JWTScopeClaimKey:           josejwt.JWTScopeFieldString,
+		RefreshTokenScopes:         []string{},
 	}
 
 	store := storage.New(db)

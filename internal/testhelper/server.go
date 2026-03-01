@@ -139,6 +139,7 @@ func fositeTestConfig(cfg *config.Config) *fosite.Config {
 		IDTokenIssuer:              cfg.Issuer,
 		SendDebugMessagesToClients: true,
 		JWTScopeClaimKey:           jwt.JWTScopeFieldString,
+		RefreshTokenScopes:         []string{},
 	}
 }
 
