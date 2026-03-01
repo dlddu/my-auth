@@ -7,11 +7,8 @@ import { test, expect } from "@playwright/test";
  * Tests the full Authorization Code flow: login → consent approval → code
  * extraction → token exchange → token validation.
  *
- * All tests in this file are skipped (DLD-668) until the token endpoint is
- * implemented and the /oauth2/token route is registered in the server.
- * Remove the `test.skip()` calls once the endpoint is available.
- *
- * TODO: Activate when DLD-668 is implemented.
+ * Tests were initially skipped (DLD-668) and activated in DLD-669 after the
+ * token endpoint was implemented.
  */
 
 // ---------------------------------------------------------------------------
@@ -135,9 +132,6 @@ test.describe("POST /oauth2/token — happy path", () => {
   test(
     "exchanges a valid authorization code for access_token, id_token, and refresh_token",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-668 is implemented
-      test.skip();
-
       // Arrange — obtain a fresh authorization code via the consent flow.
       const code = await obtainAuthorizationCode(page, context);
 
@@ -190,9 +184,6 @@ test.describe("POST /oauth2/token — JWT access_token claims", () => {
   test(
     "access_token is a JWT with valid iss, aud, scope, and exp claims",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-668 is implemented
-      test.skip();
-
       // Arrange
       const code = await obtainAuthorizationCode(page, context);
 
@@ -225,7 +216,7 @@ test.describe("POST /oauth2/token — JWT access_token claims", () => {
       expect((header.kid as string).length).toBeGreaterThan(0);
 
       // iss must match the configured issuer.
-      expect(payload.iss).toBe("http://localhost:8080");
+      expect(payload.iss).toBe("https://auth.test.local");
 
       // aud must contain the client_id.
       const aud = Array.isArray(payload.aud)
@@ -259,9 +250,6 @@ test.describe("POST /oauth2/token — id_token OIDC claims", () => {
   test(
     "id_token JWT header references a kid present in the JWKS endpoint",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-668 is implemented
-      test.skip();
-
       // Arrange
       const code = await obtainAuthorizationCode(page, context);
 
@@ -306,9 +294,6 @@ test.describe("POST /oauth2/token — id_token OIDC claims", () => {
   test(
     "id_token contains valid sub, aud, iss, nonce, and at_hash claims",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-668 is implemented
-      test.skip();
-
       // Arrange — use a specific nonce so we can verify it is echoed back.
       const nonce = "e2e-nonce-dld668-idtoken";
       const code = await obtainAuthorizationCode(page, context, nonce);
@@ -335,7 +320,7 @@ test.describe("POST /oauth2/token — id_token OIDC claims", () => {
       const { payload } = decodeJwtUnsafe(body.id_token);
 
       // iss — must match the configured issuer.
-      expect(payload.iss).toBe("http://localhost:8080");
+      expect(payload.iss).toBe("https://auth.test.local");
 
       // aud — must contain the client_id (may be string or array).
       const aud = Array.isArray(payload.aud)
@@ -371,9 +356,6 @@ test.describe("POST /oauth2/token — refresh_token", () => {
   test(
     "refresh_token is opaque (not a JWT) and has sufficient entropy",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-668 is implemented
-      test.skip();
-
       // Arrange
       const code = await obtainAuthorizationCode(page, context);
 
@@ -414,9 +396,6 @@ test.describe("POST /oauth2/token — error: invalid code", () => {
   test(
     "returns 400 invalid_grant when the authorization code is unknown",
     async ({ page }) => {
-      // TODO: Activate when DLD-668 is implemented
-      test.skip();
-
       // Act — submit a completely fabricated code that was never issued.
       const response = await page.request.post(TOKEN_ENDPOINT, {
         headers: {
@@ -501,9 +480,6 @@ test.describe("POST /oauth2/token — error: code reuse", () => {
   test(
     "returns 400 invalid_grant on the second use of an already-redeemed authorization code",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-668 is implemented
-      test.skip();
-
       // Arrange — obtain a real authorization code.
       const code = await obtainAuthorizationCode(page, context);
 

@@ -3,6 +3,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,10 +14,13 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	jose "github.com/go-jose/go-jose/v3"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
 	josejwt "github.com/ory/fosite/token/jwt"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
@@ -22,6 +28,20 @@ import (
 	"github.com/dlddu/my-auth/internal/keygen"
 	"github.com/dlddu/my-auth/internal/storage"
 )
+
+// testClientSecretHash is the bcrypt hash of "test-secret" (the E2E client
+// secret defined in e2e/token.spec.ts as VALID_CLIENT_SECRET).
+// Pre-computed once at package initialisation so that seedTestClient does not
+// perform expensive bcrypt work on every server start. fosite's built-in
+// BCrypt hasher calls bcrypt.CompareHashAndPassword when authenticating
+// clients, so the stored Secret must be a valid bcrypt hash — not plaintext.
+var testClientSecretHash = func() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	if err != nil {
+		panic("my-auth: bcrypt.GenerateFromPassword for test client secret: " + err.Error())
+	}
+	return h
+}()
 
 func main() {
 	// 1. config 로드
@@ -80,6 +100,8 @@ func main() {
 		IDTokenLifespan:            1 * time.Hour,
 		IDTokenIssuer:              cfg.Issuer,
 		SendDebugMessagesToClients: false,
+		JWTScopeClaimKey:           josejwt.JWTScopeFieldString,
+		RefreshTokenScopes:         []string{},
 	}
 
 	store := storage.New(db)
@@ -94,14 +116,34 @@ func main() {
 		}
 	}
 
-	jwtStrategy := &josejwt.DefaultSigner{
+	// Compute kid the same way as NewJWKSHandler (handler.go:44-46)
+	pubDER, _ := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	hash := sha256.Sum256(pubDER)
+	kid := base64.RawURLEncoding.EncodeToString(hash[:8])
+
+	jwk := jose.JSONWebKey{
+		Key:       privateKey,
+		KeyID:     kid,
+		Use:       "sig",
+		Algorithm: string(jose.RS256),
+	}
+
+	jwtSigner := &josejwt.DefaultSigner{
 		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
-			return privateKey, nil
+			return &jwk, nil
 		},
 	}
 
+	// JWT access token strategy — issues RS256-signed JWTs as access tokens
+	// so resource servers can verify them locally without introspection.
+	jwtAccessStrategy := &oauth2.DefaultJWTStrategy{
+		Signer:          jwtSigner,
+		HMACSHAStrategy: compose.NewOAuth2HMACStrategy(fositeConf),
+		Config:          fositeConf,
+	}
+
 	openIDStrategy := &openid.DefaultStrategy{
-		Signer: jwtStrategy,
+		Signer: jwtSigner,
 		Config: fositeConf,
 	}
 
@@ -109,10 +151,11 @@ func main() {
 		fositeConf,
 		store,
 		&compose.CommonStrategy{
-			CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConf),
+			CoreStrategy:               jwtAccessStrategy,
 			OpenIDConnectTokenStrategy: openIDStrategy,
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
 	)
 
@@ -142,6 +185,9 @@ func main() {
 	r.Get("/oauth2/auth", authorizeHandler)
 	r.Post("/oauth2/auth", authorizeHandler)
 
+	// OAuth2 token endpoint — exchanges authorization codes for tokens.
+	r.Post("/oauth2/token", handler.NewTokenHandler(oauth2Provider))
+
 	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	fmt.Fprintf(os.Stdout, "my-auth: listening on %s\n", addr)
@@ -170,12 +216,13 @@ func seedTestClient(store *storage.Store) error {
 	client := &fosite.DefaultOpenIDConnectClient{
 		DefaultClient: &fosite.DefaultClient{
 			ID:            "test-client",
-			Secret:        []byte("test-secret"),
+			Secret:        testClientSecretHash,
 			RedirectURIs:  []string{"http://localhost:9000/callback"},
-			GrantTypes:    []string{"authorization_code"},
+			GrantTypes:    []string{"authorization_code", "refresh_token"},
 			ResponseTypes: []string{"code"},
 			Scopes:        []string{"openid", "profile", "email"},
 		},
+		TokenEndpointAuthMethod: "client_secret_basic",
 	}
 	err := store.CreateClient(context.Background(), client)
 	if err != nil {

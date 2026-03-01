@@ -13,6 +13,8 @@ import (
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
+
+	"github.com/dlddu/my-auth/internal/session"
 )
 
 // Store implements the fosite storage interfaces required by the OAuth2 /
@@ -52,13 +54,15 @@ var _ openid.OpenIDConnectRequestStorage = (*Store)(nil)
 // requestJSON is an intermediate representation used to marshal/unmarshal a
 // fosite.Requester into a single JSON blob stored in the request_data column.
 type requestJSON struct {
-	ClientID       string              `json:"client_id"`
-	RequestedAt    time.Time           `json:"requested_at"`
-	GrantedScope   fosite.Arguments    `json:"granted_scope"`
-	RequestedScope fosite.Arguments    `json:"requested_scope"`
-	Form           map[string][]string `json:"form"`
-	Session        json.RawMessage     `json:"session"`
-	ID             string              `json:"id"`
+	ClientID          string              `json:"client_id"`
+	RequestedAt       time.Time           `json:"requested_at"`
+	GrantedScope      fosite.Arguments    `json:"granted_scope"`
+	RequestedScope    fosite.Arguments    `json:"requested_scope"`
+	GrantedAudience   fosite.Arguments    `json:"granted_audience"`
+	RequestedAudience fosite.Arguments    `json:"requested_audience"`
+	Form              map[string][]string `json:"form"`
+	Session           json.RawMessage     `json:"session"`
+	ID                string              `json:"id"`
 }
 
 func marshalRequester(req fosite.Requester) (string, error) {
@@ -68,12 +72,14 @@ func marshalRequester(req fosite.Requester) (string, error) {
 	}
 
 	rj := requestJSON{
-		ClientID:       req.GetClient().GetID(),
-		RequestedAt:    req.GetRequestedAt(),
-		GrantedScope:   req.GetGrantedScopes(),
-		RequestedScope: req.GetRequestedScopes(),
-		Session:        sessBytes,
-		ID:             req.GetID(),
+		ClientID:          req.GetClient().GetID(),
+		RequestedAt:       req.GetRequestedAt(),
+		GrantedScope:      req.GetGrantedScopes(),
+		RequestedScope:    req.GetRequestedScopes(),
+		GrantedAudience:   req.GetGrantedAudience(),
+		RequestedAudience: req.GetRequestedAudience(),
+		Session:           sessBytes,
+		ID:                req.GetID(),
 	}
 	if ar, ok := req.(*fosite.AuthorizeRequest); ok {
 		rj.Form = map[string][]string(ar.Form)
@@ -103,13 +109,15 @@ func unmarshalRequester(data string, session fosite.Session, client fosite.Clien
 	form := url.Values(rj.Form)
 
 	req := &fosite.Request{
-		ID:             rj.ID,
-		Client:         client,
-		RequestedAt:    rj.RequestedAt,
-		GrantedScope:   rj.GrantedScope,
-		RequestedScope: rj.RequestedScope,
-		Session:        session,
-		Form:           form,
+		ID:                rj.ID,
+		Client:            client,
+		RequestedAt:       rj.RequestedAt,
+		GrantedScope:      rj.GrantedScope,
+		RequestedScope:    rj.RequestedScope,
+		GrantedAudience:   rj.GrantedAudience,
+		RequestedAudience: rj.RequestedAudience,
+		Session:           session,
+		Form:              form,
 	}
 	return req, nil
 }
@@ -136,17 +144,18 @@ func sessionExpiresAt(req fosite.Requester, fallbackDuration time.Duration) stri
 // Returns fosite.ErrNotFound when the client is not registered.
 func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes FROM clients WHERE id = ?`, id)
+		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method FROM clients WHERE id = ?`, id)
 
 	var (
-		clientID      string
-		secret        string
-		redirectURIs  string
-		grantTypes    string
-		responseTypes string
-		scopes        string
+		clientID                string
+		secret                  string
+		redirectURIs            string
+		grantTypes              string
+		responseTypes           string
+		scopes                  string
+		tokenEndpointAuthMethod string
 	)
-	if err := row.Scan(&clientID, &secret, &redirectURIs, &grantTypes, &responseTypes, &scopes); err != nil {
+	if err := row.Scan(&clientID, &secret, &redirectURIs, &grantTypes, &responseTypes, &scopes, &tokenEndpointAuthMethod); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fosite.ErrNotFound
 		}
@@ -177,6 +186,7 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 			ResponseTypes: responseTypesList,
 			Scopes:        strings.Split(scopes, " "),
 		},
+		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
 	}, nil
 }
 
@@ -198,15 +208,20 @@ func (s *Store) CreateClient(ctx context.Context, client fosite.Client) error {
 	scopes := strings.Join(client.GetScopes(), " ")
 
 	var secret string
+	var tokenEndpointAuthMethod string
 	if dc, ok := client.(*fosite.DefaultOpenIDConnectClient); ok {
 		secret = string(dc.Secret)
+		tokenEndpointAuthMethod = dc.TokenEndpointAuthMethod
 	} else if dc, ok := client.(*fosite.DefaultClient); ok {
 		secret = string(dc.Secret)
 	}
+	if tokenEndpointAuthMethod == "" {
+		tokenEndpointAuthMethod = "client_secret_basic"
+	}
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes) VALUES (?, ?, ?, ?, ?, ?)`,
-		client.GetID(), secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes)
+		`INSERT INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		client.GetID(), secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes, tokenEndpointAuthMethod)
 	return err
 }
 
@@ -463,8 +478,10 @@ func (s *Store) GetOpenIDConnectSession(ctx context.Context, authorizeCode strin
 		return nil, err
 	}
 
-	session := &openid.DefaultSession{}
-	return unmarshalRequester(requestData, session, client)
+	sess := &session.Session{
+		DefaultSession: &openid.DefaultSession{},
+	}
+	return unmarshalRequester(requestData, sess, client)
 }
 
 // DeleteOpenIDConnectSession removes the OpenID Connect session identified by

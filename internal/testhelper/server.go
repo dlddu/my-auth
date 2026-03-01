@@ -3,17 +3,23 @@ package testhelper
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	jose "github.com/go-jose/go-jose/v3"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
 	"github.com/ory/fosite/token/jwt"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dlddu/my-auth/internal/config"
 	"github.com/dlddu/my-auth/internal/database"
@@ -29,6 +35,18 @@ const testClientID = "test-client"
 // testRedirectURI is the registered redirect URI for the test client.
 // It matches the value used by e2e/authorize.spec.ts (VALID_REDIRECT_URI).
 const testRedirectURI = "http://localhost:9000/callback"
+
+// testClientSecretHash is the bcrypt hash of "test-client-secret" with MinCost.
+// Pre-computed once at package initialisation to avoid expensive bcrypt work in
+// every test setup. fosite calls bcrypt.CompareHashAndPassword when verifying
+// the client secret, so the stored value must be a valid bcrypt hash.
+var testClientSecretHash = func() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("test-client-secret"), bcrypt.MinCost)
+	if err != nil {
+		panic("testhelper: bcrypt.GenerateFromPassword for test client secret: " + err.Error())
+	}
+	return h
+}()
 
 // NewTestServer creates a minimal httptest.Server backed by a temporary SQLite
 // database and returns both the server and a pre-configured *http.Client.
@@ -94,12 +112,13 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 	client := &fosite.DefaultOpenIDConnectClient{
 		DefaultClient: &fosite.DefaultClient{
 			ID:            testClientID,
-			Secret:        []byte("test-client-secret"),
+			Secret:        testClientSecretHash,
 			RedirectURIs:  []string{testRedirectURI},
-			GrantTypes:    fosite.Arguments{"authorization_code"},
+			GrantTypes:    fosite.Arguments{"authorization_code", "refresh_token"},
 			ResponseTypes: fosite.Arguments{"code"},
 			Scopes:        fosite.Arguments{"openid", "profile", "email"},
 		},
+		TokenEndpointAuthMethod: "client_secret_basic",
 	}
 
 	if err := store.CreateClient(context.Background(), client); err != nil {
@@ -119,25 +138,47 @@ func fositeTestConfig(cfg *config.Config) *fosite.Config {
 		IDTokenLifespan:            1 * time.Hour,
 		IDTokenIssuer:              cfg.Issuer,
 		SendDebugMessagesToClients: true,
+		JWTScopeClaimKey:           jwt.JWTScopeFieldString,
+		RefreshTokenScopes:         []string{},
 	}
 }
 
 // newFositeProvider constructs a fosite.OAuth2Provider configured for the
 // authorization code + OpenID Connect flow. The RSA private key is used for
-// signing ID tokens.
+// signing both access tokens (RS256 JWT) and ID tokens (RS256 JWT).
 func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa.PrivateKey) fosite.OAuth2Provider {
 	fositeConf := fositeTestConfig(cfg)
 
-	// RS256 JWT strategy for signing OIDC ID tokens.
-	jwtStrategy := &jwt.DefaultSigner{
+	// Compute kid the same way as NewJWKSHandler (handler.go:44-46)
+	pubDER, _ := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	hash := sha256.Sum256(pubDER)
+	kid := base64.RawURLEncoding.EncodeToString(hash[:8])
+
+	jwk := jose.JSONWebKey{
+		Key:       privateKey,
+		KeyID:     kid,
+		Use:       "sig",
+		Algorithm: string(jose.RS256),
+	}
+
+	// RS256 JWT signer shared between access tokens and ID tokens.
+	jwtSigner := &jwt.DefaultSigner{
 		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
-			return privateKey, nil
+			return &jwk, nil
 		},
 	}
 
-	// OpenID Connect strategy wraps the JWT strategy.
+	// JWT access token strategy — issues RS256-signed access tokens so that
+	// resource servers can verify them locally without introspection.
+	jwtAccessStrategy := &oauth2.DefaultJWTStrategy{
+		Signer:          jwtSigner,
+		HMACSHAStrategy: compose.NewOAuth2HMACStrategy(fositeConf),
+		Config:          fositeConf,
+	}
+
+	// OpenID Connect strategy wraps the same JWT signer.
 	openIDStrategy := &openid.DefaultStrategy{
-		Signer: jwtStrategy,
+		Signer: jwtSigner,
 		Config: fositeConf,
 	}
 
@@ -145,10 +186,11 @@ func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa
 		fositeConf,
 		store,
 		&compose.CommonStrategy{
-			CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConf),
+			CoreStrategy:               jwtAccessStrategy,
 			OpenIDConnectTokenStrategy: openIDStrategy,
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
 	)
 }
@@ -189,6 +231,9 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	authorizeHandler := handler.NewAuthorizeHandler(oauth2Provider, cfg, db)
 	r.Get("/oauth2/auth", authorizeHandler)
 	r.Post("/oauth2/auth", authorizeHandler)
+
+	// OAuth2 token endpoint — exchanges authorization codes for tokens.
+	r.Post("/oauth2/token", handler.NewTokenHandler(oauth2Provider))
 
 	return r
 }
