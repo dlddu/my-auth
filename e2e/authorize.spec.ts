@@ -146,25 +146,24 @@ test.describe("POST /oauth2/auth — approve", () => {
       // Navigate to the consent page.
       await page.goto(authQuery());
 
-      // Intercept the redirect to localhost:9000 which has no server running.
-      // We use page.route to catch the browser's navigation to the redirect
-      // target and extract the URL with its query parameters.
-      let capturedUrl = "";
-      await page.route("http://localhost:9000/**", (route) => {
-        capturedUrl = route.request().url();
-        route.fulfill({ status: 200, body: "intercepted" });
+      // Set up a route handler that intercepts navigation to the redirect URI
+      // (localhost:9000) and resolves a promise with the captured URL. This
+      // avoids depending on page.waitForURL which doesn't work reliably when
+      // the redirect target has no server running.
+      const redirectUrl = new Promise<string>((resolve) => {
+        page.route("http://localhost:9000/**", (route) => {
+          resolve(route.request().url());
+          route.abort();
+        });
       });
 
       // Act — click the approve button, which submits POST /oauth2/auth.
       await page.getByRole("button", { name: /승인|approve/i }).click();
 
-      // Wait for the browser to navigate to the intercepted URL.
-      await page.waitForURL(/localhost:9000/);
-
       // Assert — the server must have redirected to the client's redirect_uri
       // carrying the authorization code.
-      expect(capturedUrl).toBeTruthy();
-      const redirected = new URL(capturedUrl);
+      const url = await redirectUrl;
+      const redirected = new URL(url);
       expect(redirected.searchParams.get("code")).toBeTruthy();
       expect(redirected.searchParams.get("state")).toBe(VALID_STATE);
     }
@@ -188,23 +187,21 @@ test.describe("POST /oauth2/auth — deny", () => {
       // Navigate to the consent page.
       await page.goto(authQuery());
 
-      // Intercept the redirect to localhost:9000 which has no server running.
-      let capturedUrl = "";
-      await page.route("http://localhost:9000/**", (route) => {
-        capturedUrl = route.request().url();
-        route.fulfill({ status: 200, body: "intercepted" });
+      // Set up a route handler that intercepts navigation to the redirect URI.
+      const redirectUrl = new Promise<string>((resolve) => {
+        page.route("http://localhost:9000/**", (route) => {
+          resolve(route.request().url());
+          route.abort();
+        });
       });
 
       // Act — click the deny button.
       await page.getByRole("button", { name: /거부|deny/i }).click();
 
-      // Wait for the browser to navigate to the intercepted URL.
-      await page.waitForURL(/localhost:9000/);
-
       // Assert — RFC 6749 §4.1.2.1: the server MUST redirect to redirect_uri
       // with error=access_denied.
-      expect(capturedUrl).toBeTruthy();
-      const redirected = new URL(capturedUrl);
+      const url = await redirectUrl;
+      const redirected = new URL(url);
       expect(redirected.searchParams.get("error")).toBe("access_denied");
       expect(redirected.searchParams.get("state")).toBe(VALID_STATE);
     }
