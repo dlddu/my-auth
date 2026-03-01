@@ -147,22 +147,24 @@ test.describe("POST /oauth2/auth — approve", () => {
       await page.goto(authQuery());
 
       // Intercept the redirect to localhost:9000 which has no server running.
-      // We capture the redirect URL from the 302 response instead of waiting
-      // for the browser to load the target page.
-      const redirectPromise = page.waitForResponse(
-        (resp) =>
-          resp.status() === 302 &&
-          (resp.headers()["location"] ?? "").startsWith(VALID_REDIRECT_URI)
-      );
+      // We use page.route to catch the browser's navigation to the redirect
+      // target and extract the URL with its query parameters.
+      let capturedUrl = "";
+      await page.route("**/localhost:9000/**", (route) => {
+        capturedUrl = route.request().url();
+        route.fulfill({ status: 200, body: "intercepted" });
+      });
 
       // Act — click the approve button, which submits POST /oauth2/auth.
       await page.getByRole("button", { name: /승인|approve/i }).click();
 
-      // Assert — the server must have responded with a 302 redirect to the
-      // client's redirect_uri carrying the authorization code.
-      const response = await redirectPromise;
-      const location = response.headers()["location"] ?? "";
-      const redirected = new URL(location);
+      // Wait for the browser to navigate to the intercepted URL.
+      await page.waitForURL(/localhost:9000/);
+
+      // Assert — the server must have redirected to the client's redirect_uri
+      // carrying the authorization code.
+      expect(capturedUrl).toBeTruthy();
+      const redirected = new URL(capturedUrl);
       expect(redirected.searchParams.get("code")).toBeTruthy();
       expect(redirected.searchParams.get("state")).toBe(VALID_STATE);
     }
@@ -187,20 +189,22 @@ test.describe("POST /oauth2/auth — deny", () => {
       await page.goto(authQuery());
 
       // Intercept the redirect to localhost:9000 which has no server running.
-      const redirectPromise = page.waitForResponse(
-        (resp) =>
-          resp.status() === 302 &&
-          (resp.headers()["location"] ?? "").startsWith(VALID_REDIRECT_URI)
-      );
+      let capturedUrl = "";
+      await page.route("**/localhost:9000/**", (route) => {
+        capturedUrl = route.request().url();
+        route.fulfill({ status: 200, body: "intercepted" });
+      });
 
       // Act — click the deny button.
       await page.getByRole("button", { name: /거부|deny/i }).click();
 
+      // Wait for the browser to navigate to the intercepted URL.
+      await page.waitForURL(/localhost:9000/);
+
       // Assert — RFC 6749 §4.1.2.1: the server MUST redirect to redirect_uri
       // with error=access_denied.
-      const response = await redirectPromise;
-      const location = response.headers()["location"] ?? "";
-      const redirected = new URL(location);
+      expect(capturedUrl).toBeTruthy();
+      const redirected = new URL(capturedUrl);
       expect(redirected.searchParams.get("error")).toBe("access_denied");
       expect(redirected.searchParams.get("state")).toBe(VALID_STATE);
     }
