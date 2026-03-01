@@ -142,6 +142,26 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 	if err := store.CreateClient(ctx, public); err != nil {
 		t.Fatalf("testhelper: seed public client: %v", err)
 	}
+
+	ccSecretHash, err := bcrypt.GenerateFromPassword([]byte("cc-secret"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("testhelper: bcrypt.GenerateFromPassword for cc-client secret: %v", err)
+	}
+	ccClient := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "cc-client",
+			Secret:        ccSecretHash,
+			Public:        false,
+			RedirectURIs:  []string{},
+			GrantTypes:    fosite.Arguments{"client_credentials"},
+			ResponseTypes: fosite.Arguments{"token"},
+			Scopes:        fosite.Arguments{"read", "write"},
+		},
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
+	if err := store.CreateClient(ctx, ccClient); err != nil {
+		t.Fatalf("testhelper: seed cc-client: %v", err)
+	}
 }
 
 // fositeTestConfig returns a *fosite.Config with settings appropriate for
@@ -212,6 +232,7 @@ func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
 		compose.OAuth2PKCEFactory,
+		compose.OAuth2ClientCredentialsGrantFactory,
 	)
 }
 

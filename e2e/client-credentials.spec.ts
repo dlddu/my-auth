@@ -86,9 +86,6 @@ test.describe("POST /oauth2/token — client_credentials happy path", () => {
   test(
     "issues an access_token with token_type=Bearer and no refresh_token",
     async ({ request }) => {
-      // TODO: Activate when DLD-672 is implemented
-      test.skip();
-
       // Arrange — use the cc-client which has "client_credentials" grant allowed.
 
       // Act — POST to the token endpoint with grant_type=client_credentials.
@@ -135,9 +132,6 @@ test.describe("POST /oauth2/token — client_credentials scope claim", () => {
   test(
     "access_token JWT contains the requested scopes in the scope claim",
     async ({ request }) => {
-      // TODO: Activate when DLD-672 is implemented
-      test.skip();
-
       // Arrange — request specific scopes from the cc-client.
 
       // Act
@@ -175,9 +169,6 @@ test.describe("POST /oauth2/token — client_credentials error: invalid_client",
   test(
     "returns 401 invalid_client when client_secret is incorrect",
     async ({ request }) => {
-      // TODO: Activate when DLD-672 is implemented
-      test.skip();
-
       // Arrange — use the correct client_id but a wrong client_secret.
 
       // Act
@@ -209,9 +200,6 @@ test.describe("POST /oauth2/token — client_credentials error: unauthorized_cli
   test(
     "returns 400 unauthorized_client when the client is not allowed to use client_credentials grant",
     async ({ request }) => {
-      // TODO: Activate when DLD-672 is implemented
-      test.skip();
-
       // Arrange — test-client only has "authorization_code" and "refresh_token"
       // in its registered grant_types; "client_credentials" is not included.
       // The server must reject this request even though the credentials are valid.

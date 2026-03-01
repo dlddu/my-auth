@@ -159,6 +159,7 @@ func main() {
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OpenIDConnectExplicitFactory,
 		compose.OAuth2PKCEFactory,
+		compose.OAuth2ClientCredentialsGrantFactory,
 	)
 
 	// 5. 라우터 설정
@@ -254,6 +255,30 @@ func seedTestClient(store *storage.Store) error {
 		}
 	} else {
 		fmt.Fprintln(os.Stdout, "my-auth: seeded public-client")
+	}
+
+	ccSecretHash, err := bcrypt.GenerateFromPassword([]byte("cc-secret"), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("bcrypt.GenerateFromPassword for cc-client secret: %w", err)
+	}
+	ccClient := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "cc-client",
+			Secret:        ccSecretHash,
+			Public:        false,
+			RedirectURIs:  []string{},
+			GrantTypes:    []string{"client_credentials"},
+			ResponseTypes: []string{"token"},
+			Scopes:        []string{"read", "write"},
+		},
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
+	if err := store.CreateClient(ctx, ccClient); err != nil {
+		if !isUniqueConstraintError(err) {
+			return err
+		}
+	} else {
+		fmt.Fprintln(os.Stdout, "my-auth: seeded cc-client")
 	}
 
 	return nil
