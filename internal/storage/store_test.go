@@ -1,7 +1,7 @@
 // Package storage_test contains E2E tests for the fosite storage layer.
 //
-// All tests are skipped with t.Skip("TODO: fosite storage 구현 후 활성화") and
-// are activated one by one as DLD-665 implements each method.
+// All tests were activated as part of DLD-665 after the storage layer was
+// implemented.
 //
 // Test coverage (DLD-664):
 //   - fosite 인스턴스 초기화 + 테스트 클라이언트 저장·조회
@@ -91,7 +91,6 @@ func newAuthorizeRequest(client fosite.Client) *fosite.AuthorizeRequest {
 // This is the top-level smoke test confirming the Store plumbing is correct
 // before any individual storage interface test is activated.
 func TestStore_FositeProviderInit_ClientRegistered(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -124,7 +123,6 @@ func TestStore_FositeProviderInit_ClientRegistered(t *testing.T) {
 // TestAuthorizeCodeStore_CreateSession verifies that CreateAuthorizeCodeSession
 // persists a session without error (happy path).
 func TestAuthorizeCodeStore_CreateSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -152,7 +150,6 @@ func TestAuthorizeCodeStore_CreateSession(t *testing.T) {
 // TestAuthorizeCodeStore_GetSession verifies that GetAuthorizeCodeSession
 // returns the requester that was stored by CreateAuthorizeCodeSession.
 func TestAuthorizeCodeStore_GetSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -196,7 +193,6 @@ func TestAuthorizeCodeStore_GetSession(t *testing.T) {
 // fosite relies on this error sentinel to distinguish a used code (invalidated)
 // from a code that never existed.
 func TestAuthorizeCodeStore_GetSession_AfterInvalidate(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -236,7 +232,6 @@ func TestAuthorizeCodeStore_GetSession_AfterInvalidate(t *testing.T) {
 // TestAuthorizeCodeStore_InvalidateSession verifies that
 // InvalidateAuthorizeCodeSession succeeds when the code exists.
 func TestAuthorizeCodeStore_InvalidateSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -272,7 +267,6 @@ func TestAuthorizeCodeStore_InvalidateSession(t *testing.T) {
 // TestAccessTokenStore_CreateSession verifies that CreateAccessTokenSession
 // persists an access-token session without error (happy path).
 func TestAccessTokenStore_CreateSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -300,7 +294,6 @@ func TestAccessTokenStore_CreateSession(t *testing.T) {
 // TestAccessTokenStore_GetSession verifies that GetAccessTokenSession returns
 // the requester stored by CreateAccessTokenSession.
 func TestAccessTokenStore_GetSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -340,7 +333,6 @@ func TestAccessTokenStore_GetSession(t *testing.T) {
 // TestAccessTokenStore_DeleteSession verifies that DeleteAccessTokenSession
 // removes the session without error.
 func TestAccessTokenStore_DeleteSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -372,7 +364,6 @@ func TestAccessTokenStore_DeleteSession(t *testing.T) {
 // TestAccessTokenStore_GetSession_AfterDelete verifies that
 // GetAccessTokenSession returns an error after the session has been deleted.
 func TestAccessTokenStore_GetSession_AfterDelete(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -413,7 +404,6 @@ func TestAccessTokenStore_GetSession_AfterDelete(t *testing.T) {
 // TestRefreshTokenStore_CreateSession verifies that CreateRefreshTokenSession
 // persists a refresh-token session without error (happy path).
 func TestRefreshTokenStore_CreateSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -441,7 +431,6 @@ func TestRefreshTokenStore_CreateSession(t *testing.T) {
 // TestRefreshTokenStore_GetSession verifies that GetRefreshTokenSession
 // returns the requester stored by CreateRefreshTokenSession.
 func TestRefreshTokenStore_GetSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -481,7 +470,6 @@ func TestRefreshTokenStore_GetSession(t *testing.T) {
 // TestRefreshTokenStore_DeleteSession verifies that DeleteRefreshTokenSession
 // removes the session without error.
 func TestRefreshTokenStore_DeleteSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -513,7 +501,6 @@ func TestRefreshTokenStore_DeleteSession(t *testing.T) {
 // TestRefreshTokenStore_GetSession_AfterDelete verifies that
 // GetRefreshTokenSession returns an error after the session has been deleted.
 func TestRefreshTokenStore_GetSession_AfterDelete(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -554,7 +541,6 @@ func TestRefreshTokenStore_GetSession_AfterDelete(t *testing.T) {
 // TestOIDCStore_CreateSession verifies that CreateOpenIDConnectSession
 // persists an OIDC session without error (happy path).
 func TestOIDCStore_CreateSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -582,7 +568,6 @@ func TestOIDCStore_CreateSession(t *testing.T) {
 // TestOIDCStore_GetSession verifies that GetOpenIDConnectSession returns the
 // session stored by CreateOpenIDConnectSession.
 func TestOIDCStore_GetSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -623,7 +608,6 @@ func TestOIDCStore_GetSession(t *testing.T) {
 // fosite relies on this sentinel to distinguish "session not yet created" from
 // other storage errors.
 func TestOIDCStore_GetSession_NotFound(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -654,7 +638,6 @@ func TestOIDCStore_GetSession_NotFound(t *testing.T) {
 // TestOIDCStore_DeleteSession verifies that DeleteOpenIDConnectSession removes
 // the session without error.
 func TestOIDCStore_DeleteSession(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
@@ -686,7 +669,6 @@ func TestOIDCStore_DeleteSession(t *testing.T) {
 // TestOIDCStore_GetSession_AfterDelete verifies that GetOpenIDConnectSession
 // returns fosite.ErrNotFound after the session has been deleted.
 func TestOIDCStore_GetSession_AfterDelete(t *testing.T) {
-	t.Skip("TODO: fosite storage 구현 후 활성화") // DLD-664
 
 	// Arrange
 	dsn := testhelper.NewTestDB(t)

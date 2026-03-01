@@ -1,13 +1,12 @@
 // Package storage implements the fosite storage interfaces backed by SQLite.
-//
-// This file contains minimal stubs so that store_test.go compiles before the
-// real implementation is written (TDD — DLD-664 / DLD-665).
-// Every method panics with "not implemented" and will be replaced in DLD-665.
 package storage
 
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"strings"
+	"time"
 
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/oauth2"
@@ -45,120 +44,388 @@ var _ oauth2.RefreshTokenStorage = (*Store)(nil)
 var _ openid.OpenIDConnectRequestStorage = (*Store)(nil)
 
 // ---------------------------------------------------------------------------
-// fosite.ClientManager — stubs
-//
-// GetClient is required by fosite's OAuth2Provider to look up registered
-// clients during every request.  CreateClient is a non-interface convenience
-// method used by tests to seed the database.
+// Internal: serialise / deserialise fosite.Requester
+// ---------------------------------------------------------------------------
+
+// requestJSON is an intermediate representation used to marshal/unmarshal a
+// fosite.Requester into a single JSON blob stored in the request_data column.
+type requestJSON struct {
+	ClientID      string            `json:"client_id"`
+	RequestedAt   time.Time         `json:"requested_at"`
+	GrantedScope  fosite.Arguments  `json:"granted_scope"`
+	RequestedScope fosite.Arguments `json:"requested_scope"`
+	Form          map[string][]string `json:"form"`
+	Session       json.RawMessage   `json:"session"`
+	ID            string            `json:"id"`
+}
+
+func marshalRequester(req fosite.Requester) (string, error) {
+	sessBytes, err := json.Marshal(req.GetSession())
+	if err != nil {
+		return "", err
+	}
+
+	rj := requestJSON{
+		ClientID:       req.GetClient().GetID(),
+		RequestedAt:    req.GetRequestedAt(),
+		GrantedScope:   req.GetGrantedScopes(),
+		RequestedScope: req.GetRequestedScopes(),
+		Session:        sessBytes,
+		ID:             req.GetID(),
+	}
+	if ar, ok := req.(*fosite.AuthorizeRequest); ok {
+		rj.Form = map[string][]string(ar.Form)
+	} else if ar, ok := req.(*fosite.Request); ok {
+		rj.Form = map[string][]string(ar.Form)
+	}
+
+	data, err := json.Marshal(rj)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func unmarshalRequester(data string, session fosite.Session, client fosite.Client) (*fosite.Request, error) {
+	var rj requestJSON
+	if err := json.Unmarshal([]byte(data), &rj); err != nil {
+		return nil, err
+	}
+
+	if session != nil {
+		if err := json.Unmarshal(rj.Session, session); err != nil {
+			return nil, err
+		}
+	}
+
+	req := &fosite.Request{
+		ID:             rj.ID,
+		Client:         client,
+		RequestedAt:    rj.RequestedAt,
+		GrantedScope:   rj.GrantedScope,
+		RequestedScope: rj.RequestedScope,
+		Session:        session,
+	}
+	return req, nil
+}
+
+// ---------------------------------------------------------------------------
+// fosite.ClientManager
 // ---------------------------------------------------------------------------
 
 // GetClient retrieves a registered client by its ID.
 // Returns fosite.ErrNotFound when the client is not registered.
-// Not yet implemented.
-func (s *Store) GetClient(_ context.Context, _ string) (fosite.Client, error) {
-	panic("storage.Store.GetClient: not implemented (DLD-665)")
+func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes FROM clients WHERE id = ?`, id)
+
+	var (
+		clientID      string
+		secret        string
+		redirectURIs  string
+		grantTypes    string
+		responseTypes string
+		scopes        string
+	)
+	if err := row.Scan(&clientID, &secret, &redirectURIs, &grantTypes, &responseTypes, &scopes); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fosite.ErrNotFound
+		}
+		return nil, err
+	}
+
+	var redirectURIsList, grantTypesList, responseTypesList []string
+	_ = json.Unmarshal([]byte(redirectURIs), &redirectURIsList)
+	_ = json.Unmarshal([]byte(grantTypes), &grantTypesList)
+	_ = json.Unmarshal([]byte(responseTypes), &responseTypesList)
+
+	return &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            clientID,
+			Secret:        []byte(secret),
+			RedirectURIs:  redirectURIsList,
+			GrantTypes:    grantTypesList,
+			ResponseTypes: responseTypesList,
+			Scopes:        strings.Split(scopes, " "),
+		},
+	}, nil
 }
 
 // CreateClient persists a new OAuth2 client.
 // Intended for test seeding; not part of the fosite.ClientManager interface.
-// Not yet implemented.
-func (s *Store) CreateClient(_ context.Context, _ fosite.Client) error {
-	panic("storage.Store.CreateClient: not implemented (DLD-665)")
+func (s *Store) CreateClient(ctx context.Context, client fosite.Client) error {
+	redirectURIs, _ := json.Marshal(client.GetRedirectURIs())
+	grantTypes, _ := json.Marshal(client.GetGrantTypes())
+	responseTypes, _ := json.Marshal(client.GetResponseTypes())
+	scopes := strings.Join(client.GetScopes(), " ")
+
+	var secret string
+	if dc, ok := client.(*fosite.DefaultOpenIDConnectClient); ok {
+		secret = string(dc.Secret)
+	} else if dc, ok := client.(*fosite.DefaultClient); ok {
+		secret = string(dc.Secret)
+	}
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes) VALUES (?, ?, ?, ?, ?, ?)`,
+		client.GetID(), secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes)
+	return err
 }
 
 // ---------------------------------------------------------------------------
-// oauth2.AuthorizeCodeStorage — stubs
+// oauth2.AuthorizeCodeStorage
 // ---------------------------------------------------------------------------
 
 // CreateAuthorizeCodeSession persists an authorisation code together with its
-// associated fosite.Requester. Not yet implemented.
-func (s *Store) CreateAuthorizeCodeSession(_ context.Context, _ string, _ fosite.Requester) error {
-	panic("storage.Store.CreateAuthorizeCodeSession: not implemented (DLD-665)")
+// associated fosite.Requester.
+func (s *Store) CreateAuthorizeCodeSession(ctx context.Context, code string, req fosite.Requester) error {
+	requestData, err := marshalRequester(req)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO authorization_codes (code, client_id, subject, redirect_uri, scopes, expires_at, request_data)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		code,
+		req.GetClient().GetID(),
+		"", // subject extracted from session if needed
+		"", // redirect_uri
+		strings.Join(req.GetGrantedScopes(), " "),
+		time.Now().Add(10*time.Minute).UTC().Format(time.RFC3339),
+		requestData,
+	)
+	return err
 }
 
 // GetAuthorizeCodeSession retrieves the Requester for the given authorisation
 // code. Returns fosite.ErrInvalidatedAuthorizeCode if the code has been
-// invalidated. Not yet implemented.
-func (s *Store) GetAuthorizeCodeSession(_ context.Context, _ string, _ fosite.Session) (fosite.Requester, error) {
-	panic("storage.Store.GetAuthorizeCodeSession: not implemented (DLD-665)")
+// invalidated.
+func (s *Store) GetAuthorizeCodeSession(ctx context.Context, code string, session fosite.Session) (fosite.Requester, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT client_id, used, request_data FROM authorization_codes WHERE code = ?`, code)
+
+	var (
+		clientID    string
+		used        int
+		requestData string
+	)
+	if err := row.Scan(&clientID, &used, &requestData); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fosite.ErrNotFound
+		}
+		return nil, err
+	}
+
+	client, err := s.GetClient(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := unmarshalRequester(requestData, session, client)
+	if err != nil {
+		return nil, err
+	}
+
+	if used != 0 {
+		return req, fosite.ErrInvalidatedAuthorizeCode
+	}
+
+	return req, nil
 }
 
 // InvalidateAuthorizeCodeSession marks an authorisation code as invalidated so
 // that subsequent GetAuthorizeCodeSession calls return
-// fosite.ErrInvalidatedAuthorizeCode. Not yet implemented.
-func (s *Store) InvalidateAuthorizeCodeSession(_ context.Context, _ string) error {
-	panic("storage.Store.InvalidateAuthorizeCodeSession: not implemented (DLD-665)")
+// fosite.ErrInvalidatedAuthorizeCode.
+func (s *Store) InvalidateAuthorizeCodeSession(ctx context.Context, code string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE authorization_codes SET used = 1 WHERE code = ?`, code)
+	return err
 }
 
 // ---------------------------------------------------------------------------
-// oauth2.AccessTokenStorage — stubs
+// oauth2.AccessTokenStorage
 // ---------------------------------------------------------------------------
 
 // CreateAccessTokenSession persists an access-token signature together with
-// its associated fosite.Requester. Not yet implemented.
-func (s *Store) CreateAccessTokenSession(_ context.Context, _ string, _ fosite.Requester) error {
-	panic("storage.Store.CreateAccessTokenSession: not implemented (DLD-665)")
+// its associated fosite.Requester.
+func (s *Store) CreateAccessTokenSession(ctx context.Context, signature string, req fosite.Requester) error {
+	requestData, err := marshalRequester(req)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO tokens (signature, request_id, client_id, subject, scopes, expires_at, request_data)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		signature,
+		req.GetID(),
+		req.GetClient().GetID(),
+		"",
+		strings.Join(req.GetGrantedScopes(), " "),
+		time.Now().Add(1*time.Hour).UTC().Format(time.RFC3339),
+		requestData,
+	)
+	return err
 }
 
 // GetAccessTokenSession retrieves the Requester for the given access-token
-// signature. Not yet implemented.
-func (s *Store) GetAccessTokenSession(_ context.Context, _ string, _ fosite.Session) (fosite.Requester, error) {
-	panic("storage.Store.GetAccessTokenSession: not implemented (DLD-665)")
+// signature.
+func (s *Store) GetAccessTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT client_id, request_data FROM tokens WHERE signature = ?`, signature)
+
+	var (
+		clientID    string
+		requestData string
+	)
+	if err := row.Scan(&clientID, &requestData); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fosite.ErrNotFound
+		}
+		return nil, err
+	}
+
+	client, err := s.GetClient(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalRequester(requestData, session, client)
 }
 
 // DeleteAccessTokenSession removes the access-token record identified by the
-// given signature. Not yet implemented.
-func (s *Store) DeleteAccessTokenSession(_ context.Context, _ string) error {
-	panic("storage.Store.DeleteAccessTokenSession: not implemented (DLD-665)")
+// given signature.
+func (s *Store) DeleteAccessTokenSession(ctx context.Context, signature string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM tokens WHERE signature = ?`, signature)
+	return err
 }
 
 // ---------------------------------------------------------------------------
-// oauth2.RefreshTokenStorage — stubs
+// oauth2.RefreshTokenStorage
 // ---------------------------------------------------------------------------
 
 // CreateRefreshTokenSession persists a refresh-token signature together with
-// its associated fosite.Requester. Not yet implemented.
-func (s *Store) CreateRefreshTokenSession(_ context.Context, _ string, _ string, _ fosite.Requester) error {
-	panic("storage.Store.CreateRefreshTokenSession: not implemented (DLD-665)")
+// its associated fosite.Requester.
+func (s *Store) CreateRefreshTokenSession(ctx context.Context, signature string, accessTokenSignature string, req fosite.Requester) error {
+	requestData, err := marshalRequester(req)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO refresh_tokens (signature, client_id, subject, scopes, expires_at, request_data, access_token_signature)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		signature,
+		req.GetClient().GetID(),
+		"",
+		strings.Join(req.GetGrantedScopes(), " "),
+		time.Now().Add(24*time.Hour).UTC().Format(time.RFC3339),
+		requestData,
+		accessTokenSignature,
+	)
+	return err
 }
 
 // GetRefreshTokenSession retrieves the Requester for the given refresh-token
-// signature. Not yet implemented.
-func (s *Store) GetRefreshTokenSession(_ context.Context, _ string, _ fosite.Session) (fosite.Requester, error) {
-	panic("storage.Store.GetRefreshTokenSession: not implemented (DLD-665)")
+// signature.
+func (s *Store) GetRefreshTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT client_id, request_data FROM refresh_tokens WHERE signature = ?`, signature)
+
+	var (
+		clientID    string
+		requestData string
+	)
+	if err := row.Scan(&clientID, &requestData); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fosite.ErrNotFound
+		}
+		return nil, err
+	}
+
+	client, err := s.GetClient(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalRequester(requestData, session, client)
 }
 
 // DeleteRefreshTokenSession removes the refresh-token record identified by the
-// given signature. Not yet implemented.
-func (s *Store) DeleteRefreshTokenSession(_ context.Context, _ string) error {
-	panic("storage.Store.DeleteRefreshTokenSession: not implemented (DLD-665)")
+// given signature.
+func (s *Store) DeleteRefreshTokenSession(ctx context.Context, signature string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM refresh_tokens WHERE signature = ?`, signature)
+	return err
 }
 
 // RotateRefreshToken rotates the refresh token identified by the given
-// requestID and refreshTokenSignature. Not yet implemented.
-func (s *Store) RotateRefreshToken(_ context.Context, _ string, _ string) error {
-	panic("storage.Store.RotateRefreshToken: not implemented (DLD-665)")
+// requestID and refreshTokenSignature.
+func (s *Store) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) error {
+	// Delete the old refresh token by signature to complete rotation.
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM refresh_tokens WHERE signature = ?`, refreshTokenSignature)
+	return err
 }
 
 // ---------------------------------------------------------------------------
-// openid.OpenIDConnectRequestStorage — stubs
+// openid.OpenIDConnectRequestStorage
 // ---------------------------------------------------------------------------
 
 // CreateOpenIDConnectSession persists an OpenID Connect session keyed by the
-// authorisation code. Not yet implemented.
-func (s *Store) CreateOpenIDConnectSession(_ context.Context, _ string, _ fosite.Requester) error {
-	panic("storage.Store.CreateOpenIDConnectSession: not implemented (DLD-665)")
+// authorisation code.
+func (s *Store) CreateOpenIDConnectSession(ctx context.Context, authorizeCode string, req fosite.Requester) error {
+	requestData, err := marshalRequester(req)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO sessions (id, client_id, subject, scopes, expires_at, request_data)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		authorizeCode,
+		req.GetClient().GetID(),
+		"",
+		strings.Join(req.GetGrantedScopes(), " "),
+		time.Now().Add(1*time.Hour).UTC().Format(time.RFC3339),
+		requestData,
+	)
+	return err
 }
 
 // GetOpenIDConnectSession retrieves an OpenID Connect session for the given
 // authorisation code. Returns fosite.ErrNotFound when the session does not
-// exist. Not yet implemented.
-func (s *Store) GetOpenIDConnectSession(_ context.Context, _ string, _ fosite.Requester) (fosite.Requester, error) {
-	panic("storage.Store.GetOpenIDConnectSession: not implemented (DLD-665)")
+// exist.
+func (s *Store) GetOpenIDConnectSession(ctx context.Context, authorizeCode string, _ fosite.Requester) (fosite.Requester, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT client_id, request_data FROM sessions WHERE id = ?`, authorizeCode)
+
+	var (
+		clientID    string
+		requestData string
+	)
+	if err := row.Scan(&clientID, &requestData); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fosite.ErrNotFound
+		}
+		return nil, err
+	}
+
+	client, err := s.GetClient(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+
+	session := &openid.DefaultSession{}
+	return unmarshalRequester(requestData, session, client)
 }
 
 // DeleteOpenIDConnectSession removes the OpenID Connect session identified by
-// the given authorisation code. Not yet implemented.
-func (s *Store) DeleteOpenIDConnectSession(_ context.Context, _ string) error {
-	panic("storage.Store.DeleteOpenIDConnectSession: not implemented (DLD-665)")
+// the given authorisation code.
+func (s *Store) DeleteOpenIDConnectSession(ctx context.Context, authorizeCode string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM sessions WHERE id = ?`, authorizeCode)
+	return err
 }
