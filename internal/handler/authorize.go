@@ -146,6 +146,10 @@ func handleAuthorizePost(w http.ResponseWriter, r *http.Request, provider fosite
 		ar.GrantScope(scope)
 	}
 
+	// Grant the client ID as audience so the JWT access token's "aud" claim
+	// contains the client identifier.
+	ar.GrantAudience(ar.GetClient().GetID())
+
 	// Retrieve the authenticated user's username from the session cookie to
 	// populate the OIDC session subject.
 	username := authenticatedUsername(r, db, cfg.SessionSecret)
