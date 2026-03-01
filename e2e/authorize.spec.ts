@@ -146,15 +146,17 @@ test.describe("POST /oauth2/auth — approve", () => {
       // Navigate to the consent page.
       await page.goto(authQuery());
 
-      // Set up a route handler that intercepts navigation to the redirect URI
-      // (localhost:9000) and resolves a promise with the captured URL. This
-      // avoids depending on page.waitForURL which doesn't work reliably when
-      // the redirect target has no server running.
+      // Set up a route handler to intercept navigation to the redirect URI
+      // (localhost:9000). The route must be fully registered (awaited) before
+      // clicking the button to avoid a race condition.
+      let resolveRedirect!: (url: string) => void;
       const redirectUrl = new Promise<string>((resolve) => {
-        page.route("http://localhost:9000/**", (route) => {
-          resolve(route.request().url());
-          route.abort();
-        });
+        resolveRedirect = resolve;
+      });
+
+      await page.route("http://localhost:9000/**", (route) => {
+        resolveRedirect(route.request().url());
+        route.abort();
       });
 
       // Act — click the approve button, which submits POST /oauth2/auth.
@@ -187,12 +189,15 @@ test.describe("POST /oauth2/auth — deny", () => {
       // Navigate to the consent page.
       await page.goto(authQuery());
 
-      // Set up a route handler that intercepts navigation to the redirect URI.
+      // Set up a route handler to intercept navigation to the redirect URI.
+      let resolveRedirect!: (url: string) => void;
       const redirectUrl = new Promise<string>((resolve) => {
-        page.route("http://localhost:9000/**", (route) => {
-          resolve(route.request().url());
-          route.abort();
-        });
+        resolveRedirect = resolve;
+      });
+
+      await page.route("http://localhost:9000/**", (route) => {
+        resolveRedirect(route.request().url());
+        route.abort();
       });
 
       // Act — click the deny button.
