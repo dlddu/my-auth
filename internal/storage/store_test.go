@@ -428,7 +428,7 @@ func TestRefreshTokenStore_CreateSession(t *testing.T) {
 	signature := "refresh-sig-create-001"
 
 	// Act
-	err := store.CreateRefreshTokenSession(ctx, signature, req)
+	err := store.CreateRefreshTokenSession(ctx, signature, "access-sig-for-refresh-create-001", req)
 
 	// Assert
 	if err != nil {
@@ -455,7 +455,7 @@ func TestRefreshTokenStore_GetSession(t *testing.T) {
 	req := newAuthorizeRequest(client)
 	signature := "refresh-sig-get-001"
 
-	if err := store.CreateRefreshTokenSession(ctx, signature, req); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, signature, "access-sig-for-refresh-get-001", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession(): %v", err)
 	}
 
@@ -495,7 +495,7 @@ func TestRefreshTokenStore_DeleteSession(t *testing.T) {
 	req := newAuthorizeRequest(client)
 	signature := "refresh-sig-delete-001"
 
-	if err := store.CreateRefreshTokenSession(ctx, signature, req); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, signature, "access-sig-for-refresh-delete-001", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession(): %v", err)
 	}
 
@@ -527,7 +527,7 @@ func TestRefreshTokenStore_GetSession_AfterDelete(t *testing.T) {
 	req := newAuthorizeRequest(client)
 	signature := "refresh-sig-del2-001"
 
-	if err := store.CreateRefreshTokenSession(ctx, signature, req); err != nil {
+	if err := store.CreateRefreshTokenSession(ctx, signature, "access-sig-for-refresh-del2-001", req); err != nil {
 		t.Fatalf("CreateRefreshTokenSession(): %v", err)
 	}
 	if err := store.DeleteRefreshTokenSession(ctx, signature); err != nil {

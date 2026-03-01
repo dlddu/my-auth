@@ -118,7 +118,7 @@ func (s *Store) DeleteAccessTokenSession(_ context.Context, _ string) error {
 
 // CreateRefreshTokenSession persists a refresh-token signature together with
 // its associated fosite.Requester. Not yet implemented.
-func (s *Store) CreateRefreshTokenSession(_ context.Context, _ string, _ fosite.Requester) error {
+func (s *Store) CreateRefreshTokenSession(_ context.Context, _ string, _ string, _ fosite.Requester) error {
 	panic("storage.Store.CreateRefreshTokenSession: not implemented (DLD-665)")
 }
 
@@ -132,6 +132,12 @@ func (s *Store) GetRefreshTokenSession(_ context.Context, _ string, _ fosite.Ses
 // given signature. Not yet implemented.
 func (s *Store) DeleteRefreshTokenSession(_ context.Context, _ string) error {
 	panic("storage.Store.DeleteRefreshTokenSession: not implemented (DLD-665)")
+}
+
+// RotateRefreshToken rotates the refresh token identified by the given
+// requestID and refreshTokenSignature. Not yet implemented.
+func (s *Store) RotateRefreshToken(_ context.Context, _ string, _ string) error {
+	panic("storage.Store.RotateRefreshToken: not implemented (DLD-665)")
 }
 
 // ---------------------------------------------------------------------------
