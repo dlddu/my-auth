@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
 	"github.com/ory/fosite/token/jwt"
 
@@ -124,20 +125,28 @@ func fositeTestConfig(cfg *config.Config) *fosite.Config {
 
 // newFositeProvider constructs a fosite.OAuth2Provider configured for the
 // authorization code + OpenID Connect flow. The RSA private key is used for
-// signing ID tokens.
+// signing both access tokens (RS256 JWT) and ID tokens (RS256 JWT).
 func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa.PrivateKey) fosite.OAuth2Provider {
 	fositeConf := fositeTestConfig(cfg)
 
-	// RS256 JWT strategy for signing OIDC ID tokens.
-	jwtStrategy := &jwt.DefaultSigner{
+	// RS256 JWT signer shared between access tokens and ID tokens.
+	jwtSigner := &jwt.DefaultSigner{
 		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
 			return privateKey, nil
 		},
 	}
 
-	// OpenID Connect strategy wraps the JWT strategy.
+	// JWT access token strategy — issues RS256-signed access tokens so that
+	// resource servers can verify them locally without introspection.
+	jwtAccessStrategy := &oauth2.DefaultJWTStrategy{
+		Signer:          jwtSigner,
+		HMACSHAStrategy: compose.NewOAuth2HMACStrategy(fositeConf),
+		Config:          fositeConf,
+	}
+
+	// OpenID Connect strategy wraps the same JWT signer.
 	openIDStrategy := &openid.DefaultStrategy{
-		Signer: jwtStrategy,
+		Signer: jwtSigner,
 		Config: fositeConf,
 	}
 
@@ -145,7 +154,7 @@ func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa
 		fositeConf,
 		store,
 		&compose.CommonStrategy{
-			CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConf),
+			CoreStrategy:               jwtAccessStrategy,
 			OpenIDConnectTokenStrategy: openIDStrategy,
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
@@ -189,6 +198,9 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	authorizeHandler := handler.NewAuthorizeHandler(oauth2Provider, cfg, db)
 	r.Get("/oauth2/auth", authorizeHandler)
 	r.Post("/oauth2/auth", authorizeHandler)
+
+	// OAuth2 token endpoint — exchanges authorization codes for tokens.
+	r.Post("/oauth2/token", handler.NewTokenHandler(oauth2Provider))
 
 	return r
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
 	josejwt "github.com/ory/fosite/token/jwt"
 
@@ -94,14 +95,22 @@ func main() {
 		}
 	}
 
-	jwtStrategy := &josejwt.DefaultSigner{
+	jwtSigner := &josejwt.DefaultSigner{
 		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
 			return privateKey, nil
 		},
 	}
 
+	// JWT access token strategy — issues RS256-signed JWTs as access tokens
+	// so resource servers can verify them locally without introspection.
+	jwtAccessStrategy := &oauth2.DefaultJWTStrategy{
+		Signer:          jwtSigner,
+		HMACSHAStrategy: compose.NewOAuth2HMACStrategy(fositeConf),
+		Config:          fositeConf,
+	}
+
 	openIDStrategy := &openid.DefaultStrategy{
-		Signer: jwtStrategy,
+		Signer: jwtSigner,
 		Config: fositeConf,
 	}
 
@@ -109,7 +118,7 @@ func main() {
 		fositeConf,
 		store,
 		&compose.CommonStrategy{
-			CoreStrategy:               compose.NewOAuth2HMACStrategy(fositeConf),
+			CoreStrategy:               jwtAccessStrategy,
 			OpenIDConnectTokenStrategy: openIDStrategy,
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
@@ -141,6 +150,9 @@ func main() {
 	authorizeHandler := handler.NewAuthorizeHandler(oauth2Provider, cfg, db)
 	r.Get("/oauth2/auth", authorizeHandler)
 	r.Post("/oauth2/auth", authorizeHandler)
+
+	// OAuth2 token endpoint — exchanges authorization codes for tokens.
+	r.Post("/oauth2/token", handler.NewTokenHandler(oauth2Provider))
 
 	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
