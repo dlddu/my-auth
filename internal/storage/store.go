@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -50,19 +52,19 @@ var _ openid.OpenIDConnectRequestStorage = (*Store)(nil)
 // requestJSON is an intermediate representation used to marshal/unmarshal a
 // fosite.Requester into a single JSON blob stored in the request_data column.
 type requestJSON struct {
-	ClientID      string            `json:"client_id"`
-	RequestedAt   time.Time         `json:"requested_at"`
-	GrantedScope  fosite.Arguments  `json:"granted_scope"`
-	RequestedScope fosite.Arguments `json:"requested_scope"`
-	Form          map[string][]string `json:"form"`
-	Session       json.RawMessage   `json:"session"`
-	ID            string            `json:"id"`
+	ClientID       string              `json:"client_id"`
+	RequestedAt    time.Time           `json:"requested_at"`
+	GrantedScope   fosite.Arguments    `json:"granted_scope"`
+	RequestedScope fosite.Arguments    `json:"requested_scope"`
+	Form           map[string][]string `json:"form"`
+	Session        json.RawMessage     `json:"session"`
+	ID             string              `json:"id"`
 }
 
 func marshalRequester(req fosite.Requester) (string, error) {
 	sessBytes, err := json.Marshal(req.GetSession())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal session: %w", err)
 	}
 
 	rj := requestJSON{
@@ -81,7 +83,7 @@ func marshalRequester(req fosite.Requester) (string, error) {
 
 	data, err := json.Marshal(rj)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal request: %w", err)
 	}
 	return string(data), nil
 }
@@ -89,14 +91,16 @@ func marshalRequester(req fosite.Requester) (string, error) {
 func unmarshalRequester(data string, session fosite.Session, client fosite.Client) (*fosite.Request, error) {
 	var rj requestJSON
 	if err := json.Unmarshal([]byte(data), &rj); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal request: %w", err)
 	}
 
 	if session != nil {
 		if err := json.Unmarshal(rj.Session, session); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unmarshal session: %w", err)
 		}
 	}
+
+	form := url.Values(rj.Form)
 
 	req := &fosite.Request{
 		ID:             rj.ID,
@@ -105,8 +109,23 @@ func unmarshalRequester(data string, session fosite.Session, client fosite.Clien
 		GrantedScope:   rj.GrantedScope,
 		RequestedScope: rj.RequestedScope,
 		Session:        session,
+		Form:           form,
 	}
 	return req, nil
+}
+
+// sessionExpiresAt extracts the expiry time from the session if possible,
+// otherwise returns a fallback based on the requested time plus duration.
+func sessionExpiresAt(req fosite.Requester, fallbackDuration time.Duration) string {
+	if sess := req.GetSession(); sess != nil {
+		if exp := sess.GetExpiresAt(fosite.AccessToken); !exp.IsZero() {
+			return exp.UTC().Format(time.RFC3339)
+		}
+		if exp := sess.GetExpiresAt(fosite.AuthorizeCode); !exp.IsZero() {
+			return exp.UTC().Format(time.RFC3339)
+		}
+	}
+	return req.GetRequestedAt().Add(fallbackDuration).UTC().Format(time.RFC3339)
 }
 
 // ---------------------------------------------------------------------------
@@ -131,13 +150,23 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 		if err == sql.ErrNoRows {
 			return nil, fosite.ErrNotFound
 		}
-		return nil, err
+		return nil, fmt.Errorf("get client %q: %w", id, err)
 	}
 
-	var redirectURIsList, grantTypesList, responseTypesList []string
-	_ = json.Unmarshal([]byte(redirectURIs), &redirectURIsList)
-	_ = json.Unmarshal([]byte(grantTypes), &grantTypesList)
-	_ = json.Unmarshal([]byte(responseTypes), &responseTypesList)
+	var redirectURIsList []string
+	if err := json.Unmarshal([]byte(redirectURIs), &redirectURIsList); err != nil {
+		return nil, fmt.Errorf("get client %q: unmarshal redirect_uris: %w", id, err)
+	}
+
+	var grantTypesList []string
+	if err := json.Unmarshal([]byte(grantTypes), &grantTypesList); err != nil {
+		return nil, fmt.Errorf("get client %q: unmarshal grant_types: %w", id, err)
+	}
+
+	var responseTypesList []string
+	if err := json.Unmarshal([]byte(responseTypes), &responseTypesList); err != nil {
+		return nil, fmt.Errorf("get client %q: unmarshal response_types: %w", id, err)
+	}
 
 	return &fosite.DefaultOpenIDConnectClient{
 		DefaultClient: &fosite.DefaultClient{
@@ -154,9 +183,18 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 // CreateClient persists a new OAuth2 client.
 // Intended for test seeding; not part of the fosite.ClientManager interface.
 func (s *Store) CreateClient(ctx context.Context, client fosite.Client) error {
-	redirectURIs, _ := json.Marshal(client.GetRedirectURIs())
-	grantTypes, _ := json.Marshal(client.GetGrantTypes())
-	responseTypes, _ := json.Marshal(client.GetResponseTypes())
+	redirectURIs, err := json.Marshal(client.GetRedirectURIs())
+	if err != nil {
+		return fmt.Errorf("create client: marshal redirect_uris: %w", err)
+	}
+	grantTypes, err := json.Marshal(client.GetGrantTypes())
+	if err != nil {
+		return fmt.Errorf("create client: marshal grant_types: %w", err)
+	}
+	responseTypes, err := json.Marshal(client.GetResponseTypes())
+	if err != nil {
+		return fmt.Errorf("create client: marshal response_types: %w", err)
+	}
 	scopes := strings.Join(client.GetScopes(), " ")
 
 	var secret string
@@ -166,7 +204,7 @@ func (s *Store) CreateClient(ctx context.Context, client fosite.Client) error {
 		secret = string(dc.Secret)
 	}
 
-	_, err := s.db.ExecContext(ctx,
+	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes) VALUES (?, ?, ?, ?, ?, ?)`,
 		client.GetID(), secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes)
 	return err
@@ -184,15 +222,17 @@ func (s *Store) CreateAuthorizeCodeSession(ctx context.Context, code string, req
 		return err
 	}
 
+	expiresAt := sessionExpiresAt(req, 10*time.Minute)
+
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO authorization_codes (code, client_id, subject, redirect_uri, scopes, expires_at, request_data)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		code,
 		req.GetClient().GetID(),
-		"", // subject extracted from session if needed
-		"", // redirect_uri
+		"",
+		"",
 		strings.Join(req.GetGrantedScopes(), " "),
-		time.Now().Add(10*time.Minute).UTC().Format(time.RFC3339),
+		expiresAt,
 		requestData,
 	)
 	return err
@@ -255,6 +295,8 @@ func (s *Store) CreateAccessTokenSession(ctx context.Context, signature string, 
 		return err
 	}
 
+	expiresAt := sessionExpiresAt(req, 1*time.Hour)
+
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO tokens (signature, request_id, client_id, subject, scopes, expires_at, request_data)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -263,7 +305,7 @@ func (s *Store) CreateAccessTokenSession(ctx context.Context, signature string, 
 		req.GetClient().GetID(),
 		"",
 		strings.Join(req.GetGrantedScopes(), " "),
-		time.Now().Add(1*time.Hour).UTC().Format(time.RFC3339),
+		expiresAt,
 		requestData,
 	)
 	return err
@@ -314,6 +356,8 @@ func (s *Store) CreateRefreshTokenSession(ctx context.Context, signature string,
 		return err
 	}
 
+	expiresAt := sessionExpiresAt(req, 24*time.Hour)
+
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO refresh_tokens (signature, client_id, subject, scopes, expires_at, request_data, access_token_signature)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -321,7 +365,7 @@ func (s *Store) CreateRefreshTokenSession(ctx context.Context, signature string,
 		req.GetClient().GetID(),
 		"",
 		strings.Join(req.GetGrantedScopes(), " "),
-		time.Now().Add(24*time.Hour).UTC().Format(time.RFC3339),
+		expiresAt,
 		requestData,
 		accessTokenSignature,
 	)
@@ -364,7 +408,6 @@ func (s *Store) DeleteRefreshTokenSession(ctx context.Context, signature string)
 // RotateRefreshToken rotates the refresh token identified by the given
 // requestID and refreshTokenSignature.
 func (s *Store) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) error {
-	// Delete the old refresh token by signature to complete rotation.
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM refresh_tokens WHERE signature = ?`, refreshTokenSignature)
 	return err
@@ -382,6 +425,8 @@ func (s *Store) CreateOpenIDConnectSession(ctx context.Context, authorizeCode st
 		return err
 	}
 
+	expiresAt := sessionExpiresAt(req, 1*time.Hour)
+
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO sessions (id, client_id, subject, scopes, expires_at, request_data)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
@@ -389,7 +434,7 @@ func (s *Store) CreateOpenIDConnectSession(ctx context.Context, authorizeCode st
 		req.GetClient().GetID(),
 		"",
 		strings.Join(req.GetGrantedScopes(), " "),
-		time.Now().Add(1*time.Hour).UTC().Format(time.RFC3339),
+		expiresAt,
 		requestData,
 	)
 	return err
