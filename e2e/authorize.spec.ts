@@ -146,15 +146,23 @@ test.describe("POST /oauth2/auth — approve", () => {
       // Navigate to the consent page.
       await page.goto(authQuery());
 
+      // Intercept the redirect to localhost:9000 which has no server running.
+      // We capture the redirect URL from the 302 response instead of waiting
+      // for the browser to load the target page.
+      const redirectPromise = page.waitForResponse(
+        (resp) =>
+          resp.status() === 302 &&
+          (resp.headers()["location"] ?? "").startsWith(VALID_REDIRECT_URI)
+      );
+
       // Act — click the approve button, which submits POST /oauth2/auth.
       await page.getByRole("button", { name: /승인|approve/i }).click();
 
-      // Assert — the browser must have been redirected to the client's
-      // redirect_uri and the URL must carry the authorization code.
-      await page.waitForURL((url) =>
-        url.toString().startsWith(VALID_REDIRECT_URI)
-      );
-      const redirected = new URL(page.url());
+      // Assert — the server must have responded with a 302 redirect to the
+      // client's redirect_uri carrying the authorization code.
+      const response = await redirectPromise;
+      const location = response.headers()["location"] ?? "";
+      const redirected = new URL(location);
       expect(redirected.searchParams.get("code")).toBeTruthy();
       expect(redirected.searchParams.get("state")).toBe(VALID_STATE);
     }
@@ -178,15 +186,21 @@ test.describe("POST /oauth2/auth — deny", () => {
       // Navigate to the consent page.
       await page.goto(authQuery());
 
+      // Intercept the redirect to localhost:9000 which has no server running.
+      const redirectPromise = page.waitForResponse(
+        (resp) =>
+          resp.status() === 302 &&
+          (resp.headers()["location"] ?? "").startsWith(VALID_REDIRECT_URI)
+      );
+
       // Act — click the deny button.
       await page.getByRole("button", { name: /거부|deny/i }).click();
 
       // Assert — RFC 6749 §4.1.2.1: the server MUST redirect to redirect_uri
       // with error=access_denied.
-      await page.waitForURL((url) =>
-        url.toString().startsWith(VALID_REDIRECT_URI)
-      );
-      const redirected = new URL(page.url());
+      const response = await redirectPromise;
+      const location = response.headers()["location"] ?? "";
+      const redirected = new URL(location);
       expect(redirected.searchParams.get("error")).toBe("access_denied");
       expect(redirected.searchParams.get("state")).toBe(VALID_STATE);
     }

@@ -118,19 +118,22 @@ func handleAuthorizePost(w http.ResponseWriter, r *http.Request, provider fosite
 
 	ctx := r.Context()
 
+	// Parse the form body BEFORE calling NewAuthorizeRequest so that the
+	// "action" field is available via r.FormValue. NewAuthorizeRequest may
+	// read the request body internally; if the body is consumed first by
+	// fosite, r.FormValue("action") would return an empty string.
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	action := r.FormValue("action")
+
 	ar, err := provider.NewAuthorizeRequest(ctx, r)
 	if err != nil {
 		provider.WriteAuthorizeError(ctx, w, ar, err)
 		return
 	}
-
-	// Parse the form to read the action field.
-	if err := r.ParseForm(); err != nil {
-		provider.WriteAuthorizeError(ctx, w, ar, fosite.ErrServerError.WithDebug(err.Error()))
-		return
-	}
-
-	action := r.FormValue("action")
 
 	if action == "deny" {
 		provider.WriteAuthorizeError(ctx, w, ar, fosite.ErrAccessDenied)
