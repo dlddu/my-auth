@@ -216,7 +216,7 @@ test.describe("POST /oauth2/token — JWT access_token claims", () => {
       expect((header.kid as string).length).toBeGreaterThan(0);
 
       // iss must match the configured issuer.
-      expect(payload.iss).toBe("http://localhost:8080");
+      expect(payload.iss).toBe("https://auth.test.local");
 
       // aud must contain the client_id.
       const aud = Array.isArray(payload.aud)
@@ -320,7 +320,7 @@ test.describe("POST /oauth2/token — id_token OIDC claims", () => {
       const { payload } = decodeJwtUnsafe(body.id_token);
 
       // iss — must match the configured issuer.
-      expect(payload.iss).toBe("http://localhost:8080");
+      expect(payload.iss).toBe("https://auth.test.local");
 
       // aud — must contain the client_id (may be string or array).
       const aud = Array.isArray(payload.aud)
