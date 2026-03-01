@@ -137,6 +137,7 @@ func main() {
 			OpenIDConnectTokenStrategy: openIDStrategy,
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2ClientSecretBasicFactory,
 		compose.OpenIDConnectExplicitFactory,
 	)
 
