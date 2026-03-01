@@ -150,7 +150,7 @@ test.describe("POST /oauth2/auth — approve", () => {
       // We use page.route to catch the browser's navigation to the redirect
       // target and extract the URL with its query parameters.
       let capturedUrl = "";
-      await page.route("**/localhost:9000/**", (route) => {
+      await page.route("http://localhost:9000/**", (route) => {
         capturedUrl = route.request().url();
         route.fulfill({ status: 200, body: "intercepted" });
       });
@@ -190,7 +190,7 @@ test.describe("POST /oauth2/auth — deny", () => {
 
       // Intercept the redirect to localhost:9000 which has no server running.
       let capturedUrl = "";
-      await page.route("**/localhost:9000/**", (route) => {
+      await page.route("http://localhost:9000/**", (route) => {
         capturedUrl = route.request().url();
         route.fulfill({ status: 200, body: "intercepted" });
       });
