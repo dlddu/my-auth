@@ -3,13 +3,17 @@ package testhelper
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	jose "github.com/go-jose/go-jose/v3"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
 	"github.com/ory/fosite/handler/oauth2"
@@ -110,7 +114,7 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 			ID:            testClientID,
 			Secret:        testClientSecretHash,
 			RedirectURIs:  []string{testRedirectURI},
-			GrantTypes:    fosite.Arguments{"authorization_code"},
+			GrantTypes:    fosite.Arguments{"authorization_code", "refresh_token"},
 			ResponseTypes: fosite.Arguments{"code"},
 			Scopes:        fosite.Arguments{"openid", "profile", "email"},
 		},
@@ -134,6 +138,7 @@ func fositeTestConfig(cfg *config.Config) *fosite.Config {
 		IDTokenLifespan:            1 * time.Hour,
 		IDTokenIssuer:              cfg.Issuer,
 		SendDebugMessagesToClients: true,
+		JWTScopeClaimKey:           jwt.JWTScopeFieldString,
 	}
 }
 
@@ -143,10 +148,22 @@ func fositeTestConfig(cfg *config.Config) *fosite.Config {
 func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa.PrivateKey) fosite.OAuth2Provider {
 	fositeConf := fositeTestConfig(cfg)
 
+	// Compute kid the same way as NewJWKSHandler (handler.go:44-46)
+	pubDER, _ := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	hash := sha256.Sum256(pubDER)
+	kid := base64.RawURLEncoding.EncodeToString(hash[:8])
+
+	jwk := jose.JSONWebKey{
+		Key:       privateKey,
+		KeyID:     kid,
+		Use:       "sig",
+		Algorithm: string(jose.RS256),
+	}
+
 	// RS256 JWT signer shared between access tokens and ID tokens.
 	jwtSigner := &jwt.DefaultSigner{
 		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
-			return privateKey, nil
+			return &jwk, nil
 		},
 	}
 

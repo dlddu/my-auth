@@ -3,6 +3,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	jose "github.com/go-jose/go-jose/v3"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
 	"github.com/ory/fosite/handler/oauth2"
@@ -96,6 +100,7 @@ func main() {
 		IDTokenLifespan:            1 * time.Hour,
 		IDTokenIssuer:              cfg.Issuer,
 		SendDebugMessagesToClients: false,
+		JWTScopeClaimKey:           josejwt.JWTScopeFieldString,
 	}
 
 	store := storage.New(db)
@@ -110,9 +115,21 @@ func main() {
 		}
 	}
 
+	// Compute kid the same way as NewJWKSHandler (handler.go:44-46)
+	pubDER, _ := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	hash := sha256.Sum256(pubDER)
+	kid := base64.RawURLEncoding.EncodeToString(hash[:8])
+
+	jwk := jose.JSONWebKey{
+		Key:       privateKey,
+		KeyID:     kid,
+		Use:       "sig",
+		Algorithm: string(jose.RS256),
+	}
+
 	jwtSigner := &josejwt.DefaultSigner{
 		GetPrivateKey: func(ctx context.Context) (interface{}, error) {
-			return privateKey, nil
+			return &jwk, nil
 		},
 	}
 
@@ -199,7 +216,7 @@ func seedTestClient(store *storage.Store) error {
 			ID:            "test-client",
 			Secret:        testClientSecretHash,
 			RedirectURIs:  []string{"http://localhost:9000/callback"},
-			GrantTypes:    []string{"authorization_code"},
+			GrantTypes:    []string{"authorization_code", "refresh_token"},
 			ResponseTypes: []string{"code"},
 			Scopes:        []string{"openid", "profile", "email"},
 		},
