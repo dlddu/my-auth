@@ -22,7 +22,7 @@ func NewTokenHandler(provider fosite.OAuth2Provider) http.HandlerFunc {
 		// from the authorize request session that was stored in the database.
 		// session.Session satisfies both openid.Session (id_token) and
 		// oauth2.JWTSessionContainer (JWT access token).
-		mySession := new(session.Session)
+		mySession := session.NewSession("", "")
 
 		// Validate client credentials, grant_type, code, redirect_uri, etc.
 		ar, err := provider.NewAccessRequest(ctx, r, mySession)
