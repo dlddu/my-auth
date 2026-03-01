@@ -137,7 +137,6 @@ func main() {
 			OpenIDConnectTokenStrategy: openIDStrategy,
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
-		compose.OAuth2ClientSecretBasicFactory,
 		compose.OpenIDConnectExplicitFactory,
 	)
 
@@ -204,6 +203,7 @@ func seedTestClient(store *storage.Store) error {
 			ResponseTypes: []string{"code"},
 			Scopes:        []string{"openid", "profile", "email"},
 		},
+		TokenEndpointAuthMethod: "client_secret_basic",
 	}
 	err := store.CreateClient(context.Background(), client)
 	if err != nil {

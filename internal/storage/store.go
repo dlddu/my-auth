@@ -136,17 +136,18 @@ func sessionExpiresAt(req fosite.Requester, fallbackDuration time.Duration) stri
 // Returns fosite.ErrNotFound when the client is not registered.
 func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes FROM clients WHERE id = ?`, id)
+		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method FROM clients WHERE id = ?`, id)
 
 	var (
-		clientID      string
-		secret        string
-		redirectURIs  string
-		grantTypes    string
-		responseTypes string
-		scopes        string
+		clientID                string
+		secret                  string
+		redirectURIs            string
+		grantTypes              string
+		responseTypes           string
+		scopes                  string
+		tokenEndpointAuthMethod string
 	)
-	if err := row.Scan(&clientID, &secret, &redirectURIs, &grantTypes, &responseTypes, &scopes); err != nil {
+	if err := row.Scan(&clientID, &secret, &redirectURIs, &grantTypes, &responseTypes, &scopes, &tokenEndpointAuthMethod); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fosite.ErrNotFound
 		}
@@ -177,6 +178,7 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 			ResponseTypes: responseTypesList,
 			Scopes:        strings.Split(scopes, " "),
 		},
+		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
 	}, nil
 }
 
@@ -198,15 +200,20 @@ func (s *Store) CreateClient(ctx context.Context, client fosite.Client) error {
 	scopes := strings.Join(client.GetScopes(), " ")
 
 	var secret string
+	var tokenEndpointAuthMethod string
 	if dc, ok := client.(*fosite.DefaultOpenIDConnectClient); ok {
 		secret = string(dc.Secret)
+		tokenEndpointAuthMethod = dc.TokenEndpointAuthMethod
 	} else if dc, ok := client.(*fosite.DefaultClient); ok {
 		secret = string(dc.Secret)
 	}
+	if tokenEndpointAuthMethod == "" {
+		tokenEndpointAuthMethod = "client_secret_basic"
+	}
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes) VALUES (?, ?, ?, ?, ?, ?)`,
-		client.GetID(), secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes)
+		`INSERT INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		client.GetID(), secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes, tokenEndpointAuthMethod)
 	return err
 }
 

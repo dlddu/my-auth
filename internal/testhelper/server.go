@@ -114,6 +114,7 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 			ResponseTypes: fosite.Arguments{"code"},
 			Scopes:        fosite.Arguments{"openid", "profile", "email"},
 		},
+		TokenEndpointAuthMethod: "client_secret_basic",
 	}
 
 	if err := store.CreateClient(context.Background(), client); err != nil {
@@ -171,7 +172,6 @@ func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa
 			OpenIDConnectTokenStrategy: openIDStrategy,
 		},
 		compose.OAuth2AuthorizeExplicitFactory,
-		compose.OAuth2ClientSecretBasicFactory,
 		compose.OpenIDConnectExplicitFactory,
 	)
 }
