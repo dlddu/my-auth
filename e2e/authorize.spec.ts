@@ -8,8 +8,6 @@ import { test, expect } from "@playwright/test";
  *
  * All tests in this file are skipped until the authorization endpoint and
  * consent flow are fully implemented.
- *
- * TODO: Activate when DLD-666 is implemented.
  */
 
 // ---------------------------------------------------------------------------
@@ -42,9 +40,6 @@ test.describe("GET /oauth2/auth — unauthenticated", () => {
   test(
     "redirects to /login with return_to preserving the original URL",
     async ({ request }) => {
-      // TODO: Activate when DLD-666 is implemented
-      test.skip();
-
       // Arrange
       const originalUrl = authQuery();
 
@@ -78,9 +73,6 @@ test.describe("GET /oauth2/auth — authenticated", () => {
   test(
     "renders the consent page when the user is already logged in",
     async ({ page }) => {
-      // TODO: Activate when DLD-666 is implemented
-      test.skip();
-
       // Arrange — establish an authenticated session via the login endpoint.
       await page.goto("/login");
       await page.getByLabel("Email").fill("admin@test.local");
@@ -108,9 +100,6 @@ test.describe("Consent page UI", () => {
   test(
     "displays client name, domain, and the requested scopes",
     async ({ page }) => {
-      // TODO: Activate when DLD-666 is implemented
-      test.skip();
-
       // Arrange — log in first.
       await page.goto("/login");
       await page.getByLabel("Email").fill("admin@test.local");
@@ -148,9 +137,6 @@ test.describe("POST /oauth2/auth — approve", () => {
   test(
     "redirects to callback URL with code parameter after user approves",
     async ({ page }) => {
-      // TODO: Activate when DLD-666 is implemented
-      test.skip();
-
       // Arrange — log in first.
       await page.goto("/login");
       await page.getByLabel("Email").fill("admin@test.local");
@@ -183,9 +169,6 @@ test.describe("POST /oauth2/auth — deny", () => {
   test(
     "returns access_denied error after user denies consent",
     async ({ page }) => {
-      // TODO: Activate when DLD-666 is implemented
-      test.skip();
-
       // Arrange — log in first.
       await page.goto("/login");
       await page.getByLabel("Email").fill("admin@test.local");
@@ -218,9 +201,6 @@ test.describe("GET /oauth2/auth — error cases", () => {
   test(
     "returns an error response when client_id is unknown",
     async ({ request }) => {
-      // TODO: Activate when DLD-666 is implemented
-      test.skip();
-
       // Act — fosite must NOT redirect to an unrecognised client's redirect_uri;
       // it returns an error directly to the user-agent (RFC 6749 §4.1.2.1).
       const response = await request.get(
@@ -237,9 +217,6 @@ test.describe("GET /oauth2/auth — error cases", () => {
   test(
     "returns an error response when redirect_uri does not match the registered URI",
     async ({ request }) => {
-      // TODO: Activate when DLD-666 is implemented
-      test.skip();
-
       // Act — fosite must reject a mismatched redirect_uri and return the error
       // directly rather than redirecting (RFC 6749 §4.1.2.1 security note).
       const response = await request.get(
