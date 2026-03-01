@@ -13,6 +13,7 @@ import (
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
+	"github.com/ory/fosite/handler/pkce"
 
 	"github.com/dlddu/my-auth/internal/session"
 )
@@ -46,6 +47,7 @@ var _ oauth2.AuthorizeCodeStorage = (*Store)(nil)
 var _ oauth2.AccessTokenStorage = (*Store)(nil)
 var _ oauth2.RefreshTokenStorage = (*Store)(nil)
 var _ openid.OpenIDConnectRequestStorage = (*Store)(nil)
+var _ pkce.PKCERequestStorage = (*Store)(nil)
 
 // ---------------------------------------------------------------------------
 // Internal: serialise / deserialise fosite.Requester
@@ -144,7 +146,7 @@ func sessionExpiresAt(req fosite.Requester, fallbackDuration time.Duration) stri
 // Returns fosite.ErrNotFound when the client is not registered.
 func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method FROM clients WHERE id = ?`, id)
+		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method, is_public FROM clients WHERE id = ?`, id)
 
 	var (
 		clientID                string
@@ -154,8 +156,9 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 		responseTypes           string
 		scopes                  string
 		tokenEndpointAuthMethod string
+		isPublic                bool
 	)
-	if err := row.Scan(&clientID, &secret, &redirectURIs, &grantTypes, &responseTypes, &scopes, &tokenEndpointAuthMethod); err != nil {
+	if err := row.Scan(&clientID, &secret, &redirectURIs, &grantTypes, &responseTypes, &scopes, &tokenEndpointAuthMethod, &isPublic); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fosite.ErrNotFound
 		}
@@ -181,6 +184,7 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 		DefaultClient: &fosite.DefaultClient{
 			ID:            clientID,
 			Secret:        []byte(secret),
+			Public:        isPublic,
 			RedirectURIs:  redirectURIsList,
 			GrantTypes:    grantTypesList,
 			ResponseTypes: responseTypesList,
@@ -209,19 +213,22 @@ func (s *Store) CreateClient(ctx context.Context, client fosite.Client) error {
 
 	var secret string
 	var tokenEndpointAuthMethod string
+	var isPublic bool
 	if dc, ok := client.(*fosite.DefaultOpenIDConnectClient); ok {
 		secret = string(dc.Secret)
 		tokenEndpointAuthMethod = dc.TokenEndpointAuthMethod
+		isPublic = dc.Public
 	} else if dc, ok := client.(*fosite.DefaultClient); ok {
 		secret = string(dc.Secret)
+		isPublic = dc.Public
 	}
 	if tokenEndpointAuthMethod == "" {
 		tokenEndpointAuthMethod = "client_secret_basic"
 	}
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		client.GetID(), secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes, tokenEndpointAuthMethod)
+		`INSERT INTO clients (id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method, is_public) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		client.GetID(), secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes, tokenEndpointAuthMethod, isPublic)
 	return err
 }
 
@@ -530,4 +537,62 @@ func (s *Store) ClientAssertionJWTValid(_ context.Context, _ string) error {
 // private_key_jwt client authentication.
 func (s *Store) SetClientAssertionJWT(_ context.Context, _ string, _ time.Time) error {
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// pkce.PKCERequestStorage
+// ---------------------------------------------------------------------------
+
+// CreatePKCERequestSession persists a PKCE session keyed by the given
+// signature (the authorisation code).
+func (s *Store) CreatePKCERequestSession(ctx context.Context, signature string, req fosite.Requester) error {
+	requestData, err := marshalRequester(req)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO pkce_codes (signature, request_data) VALUES (?, ?)`,
+		signature,
+		requestData,
+	)
+	return err
+}
+
+// GetPKCERequestSession retrieves the Requester for the given PKCE signature.
+// Returns fosite.ErrNotFound when the session does not exist.
+func (s *Store) GetPKCERequestSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT request_data FROM pkce_codes WHERE signature = ?`, signature)
+
+	var requestData string
+	if err := row.Scan(&requestData); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fosite.ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Extract client_id from the stored JSON so we can reconstruct the client.
+	var rj struct {
+		ClientID string `json:"client_id"`
+	}
+	if err := json.Unmarshal([]byte(requestData), &rj); err != nil {
+		return nil, fmt.Errorf("get pkce session %q: unmarshal client_id: %w", signature, err)
+	}
+
+	client, err := s.GetClient(ctx, rj.ClientID)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalRequester(requestData, session, client)
+}
+
+// DeletePKCERequestSession removes the PKCE session identified by the given
+// signature.
+func (s *Store) DeletePKCERequestSession(ctx context.Context, signature string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM pkce_codes WHERE signature = ?`, signature)
+	return err
 }

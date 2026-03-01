@@ -151,8 +151,6 @@ test.describe("GET /oauth2/auth — PKCE parameters", () => {
   test(
     "renders the consent page when code_challenge and code_challenge_method=S256 are included",
     async ({ page }) => {
-      // TODO: Activate when DLD-670 is implemented
-      test.skip();
 
       // Arrange — generate a fresh PKCE pair.
       const codeVerifier = generateCodeVerifier();
@@ -195,8 +193,6 @@ test.describe("POST /oauth2/token — PKCE happy path", () => {
   test(
     "issues access_token, id_token, and refresh_token when a valid code_verifier is supplied",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-670 is implemented
-      test.skip();
 
       // Arrange — generate a PKCE pair and obtain an authorization code.
       const codeVerifier = generateCodeVerifier();
@@ -252,8 +248,6 @@ test.describe("POST /oauth2/token — PKCE error: code_verifier missing", () => 
   test(
     "returns 400 invalid_grant when code_verifier is omitted from the token request",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-670 is implemented
-      test.skip();
 
       // Arrange — generate a PKCE pair and obtain a PKCE-bound authorization code.
       const codeVerifier = generateCodeVerifier();
@@ -296,8 +290,6 @@ test.describe("POST /oauth2/token — PKCE error: code_verifier mismatch", () =>
   test(
     "returns 400 invalid_grant when code_verifier does not match the code_challenge",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-670 is implemented
-      test.skip();
 
       // Arrange — generate a PKCE pair for the authorization request, then
       // generate a completely different verifier for the token request.
@@ -342,8 +334,6 @@ test.describe("POST /oauth2/token — public client PKCE flow", () => {
   test(
     "issues tokens to a public client authenticated solely via PKCE without a client_secret",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-670 is implemented
-      test.skip();
 
       // Arrange — generate a PKCE pair for the public client flow.
       // Public clients (no client_secret) rely on PKCE as the sole proof of
