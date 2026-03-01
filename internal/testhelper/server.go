@@ -175,6 +175,7 @@ func fositeTestConfig(cfg *config.Config) *fosite.Config {
 		RefreshTokenLifespan:        24 * time.Hour,
 		IDTokenLifespan:             1 * time.Hour,
 		IDTokenIssuer:               cfg.Issuer,
+		AccessTokenIssuer:           cfg.Issuer,
 		SendDebugMessagesToClients:  true,
 		JWTScopeClaimKey:            jwt.JWTScopeFieldString,
 		RefreshTokenScopes:          []string{},

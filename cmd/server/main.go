@@ -99,6 +99,7 @@ func main() {
 		RefreshTokenLifespan:        24 * time.Hour,
 		IDTokenLifespan:             1 * time.Hour,
 		IDTokenIssuer:               cfg.Issuer,
+		AccessTokenIssuer:           cfg.Issuer,
 		SendDebugMessagesToClients:  false,
 		JWTScopeClaimKey:            josejwt.JWTScopeFieldString,
 		RefreshTokenScopes:          []string{},
