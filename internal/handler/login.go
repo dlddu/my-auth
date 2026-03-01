@@ -231,6 +231,39 @@ func IsAuthenticated(r *http.Request, db *sql.DB, secret string) bool {
 	return time.Now().Before(expiry)
 }
 
+// authenticatedUsername returns the username from the authenticated session
+// cookie. It returns an empty string when the request has no valid session.
+func authenticatedUsername(r *http.Request, db *sql.DB, secret string) string {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return ""
+	}
+
+	sessionID, err := parseSessionCookie(cookie.Value, secret)
+	if err != nil {
+		return ""
+	}
+
+	var username, expiresAt string
+	row := db.QueryRow(
+		`SELECT username, expires_at FROM user_sessions WHERE id = ?`, sessionID,
+	)
+	if err := row.Scan(&username, &expiresAt); err != nil {
+		return ""
+	}
+
+	expiry, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return ""
+	}
+
+	if time.Now().After(expiry) {
+		return ""
+	}
+
+	return username
+}
+
 // sanitizeReturnTo validates that returnTo is a safe relative URL.
 // It returns the sanitised value or an empty string if the URL is not safe.
 func sanitizeReturnTo(returnTo string) string {

@@ -162,6 +162,48 @@ func seedTestClient(t *testing.T, db *sql.DB) {
 	if err := store.CreateClient(ctx, ccClient); err != nil {
 		t.Fatalf("testhelper: seed cc-client: %v", err)
 	}
+
+	deviceSecretHash, err := bcrypt.GenerateFromPassword([]byte("device-secret"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("testhelper: bcrypt.GenerateFromPassword for device-client secret: %v", err)
+	}
+	deviceClient := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "device-client",
+			Secret:        deviceSecretHash,
+			Public:        false,
+			RedirectURIs:  []string{},
+			GrantTypes:    fosite.Arguments{"urn:ietf:params:oauth:grant-type:device_code"},
+			ResponseTypes: fosite.Arguments{"token"},
+			Scopes:        fosite.Arguments{"openid", "profile", "email"},
+		},
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
+	if err := store.CreateClient(ctx, deviceClient); err != nil {
+		t.Fatalf("testhelper: seed device-client: %v", err)
+	}
+
+	// dc-client is the Device Code client used by the E2E tests
+	// (e2e/device-code.spec.ts: DC_CLIENT_ID="dc-client", DC_CLIENT_SECRET="dc-secret").
+	dcSecretHash, err := bcrypt.GenerateFromPassword([]byte("dc-secret"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("testhelper: bcrypt.GenerateFromPassword for dc-client secret: %v", err)
+	}
+	dcClient := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "dc-client",
+			Secret:        dcSecretHash,
+			Public:        false,
+			RedirectURIs:  []string{},
+			GrantTypes:    fosite.Arguments{"urn:ietf:params:oauth:grant-type:device_code"},
+			ResponseTypes: fosite.Arguments{"token"},
+			Scopes:        fosite.Arguments{"read", "write"},
+		},
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
+	if err := store.CreateClient(ctx, dcClient); err != nil {
+		t.Fatalf("testhelper: seed dc-client: %v", err)
+	}
 }
 
 // fositeTestConfig returns a *fosite.Config with settings appropriate for
@@ -274,8 +316,20 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	r.Get("/oauth2/auth", authorizeHandler)
 	r.Post("/oauth2/auth", authorizeHandler)
 
-	// OAuth2 token endpoint — exchanges authorization codes for tokens.
-	r.Post("/oauth2/token", handler.NewTokenHandler(oauth2Provider))
+	// OAuth2 token endpoint — exchanges authorization codes for tokens and
+	// handles device_code grant polling (RFC 8628 §3.4–3.5).
+	r.Post("/oauth2/token", handler.NewDeviceTokenHandler(oauth2Provider, db))
+
+	// Device Authorization Grant (RFC 8628) endpoints.
+	r.Post("/oauth2/device/code", handler.NewDeviceCodeHandler(cfg, db))
+
+	deviceVerifyHandler := handler.NewDeviceVerifyHandler(cfg, db)
+	r.Get("/device/verify", deviceVerifyHandler)
+	r.Post("/device/verify", deviceVerifyHandler)
+
+	// /oauth2/device/verify is the canonical RFC 8628 path for API clients
+	// (e.g. Playwright E2E tests) that POST JSON-expecting requests.
+	r.Post("/oauth2/device/verify", handler.NewDeviceVerifyAPIHandler(cfg, db))
 
 	return r
 }

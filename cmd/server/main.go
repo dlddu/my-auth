@@ -189,8 +189,20 @@ func main() {
 	r.Get("/oauth2/auth", authorizeHandler)
 	r.Post("/oauth2/auth", authorizeHandler)
 
-	// OAuth2 token endpoint — exchanges authorization codes for tokens.
-	r.Post("/oauth2/token", handler.NewTokenHandler(oauth2Provider))
+	// OAuth2 token endpoint — exchanges authorization codes for tokens and
+	// handles device_code grant polling (RFC 8628 §3.4–3.5).
+	r.Post("/oauth2/token", handler.NewDeviceTokenHandler(oauth2Provider, db))
+
+	// Device Authorization Grant (RFC 8628) endpoints.
+	r.Post("/oauth2/device/code", handler.NewDeviceCodeHandler(cfg, db))
+
+	deviceVerifyHandler := handler.NewDeviceVerifyHandler(cfg, db)
+	r.Get("/device/verify", deviceVerifyHandler)
+	r.Post("/device/verify", deviceVerifyHandler)
+
+	// /oauth2/device/verify is the canonical RFC 8628 path for API clients
+	// (e.g. Playwright E2E tests) that POST JSON-expecting requests.
+	r.Post("/oauth2/device/verify", handler.NewDeviceVerifyAPIHandler(cfg, db))
 
 	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
@@ -280,6 +292,30 @@ func seedTestClient(store *storage.Store) error {
 		}
 	} else {
 		fmt.Fprintln(os.Stdout, "my-auth: seeded cc-client")
+	}
+
+	dcSecretHash, err := bcrypt.GenerateFromPassword([]byte("dc-secret"), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("bcrypt.GenerateFromPassword for dc-client secret: %w", err)
+	}
+	dcClient := &fosite.DefaultOpenIDConnectClient{
+		DefaultClient: &fosite.DefaultClient{
+			ID:            "dc-client",
+			Secret:        dcSecretHash,
+			Public:        false,
+			RedirectURIs:  []string{},
+			GrantTypes:    []string{"urn:ietf:params:oauth:grant-type:device_code"},
+			ResponseTypes: []string{"token"},
+			Scopes:        []string{"read", "write"},
+		},
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
+	if err := store.CreateClient(ctx, dcClient); err != nil {
+		if !isUniqueConstraintError(err) {
+			return err
+		}
+	} else {
+		fmt.Fprintln(os.Stdout, "my-auth: seeded dc-client")
 	}
 
 	return nil
