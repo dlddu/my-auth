@@ -189,6 +189,10 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 			GrantTypes:    grantTypesList,
 			ResponseTypes: responseTypesList,
 			Scopes:        strings.Split(scopes, " "),
+			// Audience is set to the client ID so that fosite's audience
+			// strategy accepts granted audiences during token refresh.
+			// RFC 8707: the client's own ID is always a valid audience.
+			Audience:      []string{clientID},
 		},
 		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
 	}, nil
