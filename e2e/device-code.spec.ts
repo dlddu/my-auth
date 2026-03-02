@@ -139,8 +139,6 @@ test.describe("POST /oauth2/device/code — device authorization request", () =>
   test(
     "returns device_code, user_code, verification_uri, and expires_in",
     async ({ request }) => {
-      // TODO: Activate when DLD-674 is implemented
-      test.skip();
 
       // Arrange — use the dc-client which has the device_code grant allowed.
 
@@ -189,8 +187,6 @@ test.describe("POST /oauth2/token — device_code polling: authorization_pending
   test(
     "returns 400 authorization_pending when the user has not yet approved the request",
     async ({ request }) => {
-      // TODO: Activate when DLD-674 is implemented
-      test.skip();
 
       // Arrange — obtain a fresh device_code / user_code pair.
       // At this point the device_code status is "pending" in the DB.
@@ -229,8 +225,6 @@ test.describe("POST /oauth2/device/verify — user code verification", () => {
   test(
     "returns 200 when a logged-in user submits a valid user_code and approves",
     async ({ page, request }) => {
-      // TODO: Activate when DLD-674 is implemented
-      test.skip();
 
       // Arrange — obtain a fresh device_code / user_code pair.
       const { user_code } = await requestDeviceAuthorization(request);
@@ -269,8 +263,6 @@ test.describe("POST /oauth2/token — device_code happy path", () => {
   test(
     "issues an access_token with token_type=Bearer after the user approves the device request",
     async ({ page, request }) => {
-      // TODO: Activate when DLD-674 is implemented
-      test.skip();
 
       // Arrange — obtain a fresh device_code / user_code pair from the server.
       const { device_code, user_code } =
@@ -344,8 +336,6 @@ test.describe("POST /oauth2/token — device_code error: expired_token", () => {
   test(
     "returns 400 expired_token when polling with an expired device_code",
     async ({ request }) => {
-      // TODO: Activate when DLD-674 is implemented
-      test.skip();
 
       // Arrange — use a device_code that has already passed its expires_at
       // timestamp.  In a real test run this is achieved by either:
@@ -392,8 +382,6 @@ test.describe("POST /oauth2/device/verify — error: invalid user_code", () => {
   test(
     "returns an error when the submitted user_code does not match any pending device request",
     async ({ page }) => {
-      // TODO: Activate when DLD-674 is implemented
-      test.skip();
 
       // Arrange — log in so the verification endpoint can authenticate the user.
       await page.goto("/login");

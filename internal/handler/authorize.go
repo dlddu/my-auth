@@ -184,29 +184,6 @@ func handleAuthorizePost(w http.ResponseWriter, r *http.Request, provider fosite
 	provider.WriteAuthorizeResponse(ctx, w, ar, response)
 }
 
-// authenticatedUsername extracts the username of the currently authenticated
-// user from the session cookie. It returns an empty string if no valid session
-// is found; callers should ensure IsAuthenticated returned true first.
-func authenticatedUsername(r *http.Request, db *sql.DB, secret string) string {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		return ""
-	}
-
-	sessionID, err := parseSessionCookie(cookie.Value, secret)
-	if err != nil {
-		return ""
-	}
-
-	var username string
-	row := db.QueryRow(`SELECT username FROM user_sessions WHERE id = ?`, sessionID)
-	if err := row.Scan(&username); err != nil {
-		return ""
-	}
-
-	return username
-}
-
 // renderConsentPage writes the consent page HTML to w with the given status code.
 func renderConsentPage(w http.ResponseWriter, status int, data consentPageData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
