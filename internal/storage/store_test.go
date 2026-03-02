@@ -994,3 +994,212 @@ func TestGetClient_PublicClient_TokenEndpointAuthMethodIsNone(t *testing.T) {
 		t.Errorf("GetTokenEndpointAuthMethod() = %q, want %q", method, "none")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// RefreshTokenStorage — Token Refresh 검증 테스트 (DLD-677)
+// ---------------------------------------------------------------------------
+
+// TestRefreshTokenStore_CreateAndGet_RoundTrip verifies that a refresh token
+// session stored via CreateRefreshTokenSession can be correctly retrieved via
+// GetRefreshTokenSession and preserves the client identity.
+//
+// This is the fundamental storage round-trip test for the refresh token grant:
+// fosite calls CreateRefreshTokenSession after issuing a token and then calls
+// GetRefreshTokenSession when the client presents the refresh token.
+func TestRefreshTokenStore_CreateAndGet_RoundTrip(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	client := newTestClient("rt-roundtrip-client")
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	req := newAuthorizeRequest(client)
+	signature := "rt-roundtrip-sig-001"
+	accessSig := "rt-roundtrip-access-sig-001"
+
+	if err := store.CreateRefreshTokenSession(ctx, signature, accessSig, req); err != nil {
+		t.Fatalf("CreateRefreshTokenSession(): %v", err)
+	}
+
+	sess := &openid.DefaultSession{}
+
+	// Act
+	got, err := store.GetRefreshTokenSession(ctx, signature, sess)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("GetRefreshTokenSession() returned unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetRefreshTokenSession() returned nil Requester, want non-nil")
+	}
+	if got.GetClient().GetID() != client.GetID() {
+		t.Errorf("Requester.Client.ID = %q, want %q", got.GetClient().GetID(), client.GetID())
+	}
+}
+
+// TestRefreshTokenStore_GetSession_NotFound verifies that GetRefreshTokenSession
+// returns fosite.ErrNotFound when no session exists for the given signature.
+//
+// fosite relies on this sentinel to distinguish an unknown/expired refresh token
+// from other storage errors during the token refresh flow.
+func TestRefreshTokenStore_GetSession_NotFound(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	ctx := context.Background()
+	sess := &openid.DefaultSession{}
+	nonExistentSig := "rt-does-not-exist-sig-999"
+
+	// Act
+	_, err := store.GetRefreshTokenSession(ctx, nonExistentSig, sess)
+
+	// Assert — fosite requires ErrNotFound for an unknown refresh token.
+	if err == nil {
+		t.Fatal("GetRefreshTokenSession() returned nil error for non-existent signature, want fosite.ErrNotFound")
+	}
+	if err != fosite.ErrNotFound {
+		t.Errorf("GetRefreshTokenSession() error = %v, want fosite.ErrNotFound", err)
+	}
+}
+
+// TestRefreshTokenStore_DeleteSession_ThenNotFound verifies that
+// GetRefreshTokenSession returns fosite.ErrNotFound after the session has been
+// deleted via DeleteRefreshTokenSession.
+//
+// This behaviour is critical for security: once a refresh token is consumed
+// or revoked, it must not be retrievable from storage.
+func TestRefreshTokenStore_DeleteSession_ThenNotFound(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	client := newTestClient("rt-delete-notfound-client")
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	req := newAuthorizeRequest(client)
+	signature := "rt-delete-notfound-sig-001"
+
+	if err := store.CreateRefreshTokenSession(ctx, signature, "rt-delete-notfound-access-001", req); err != nil {
+		t.Fatalf("CreateRefreshTokenSession(): %v", err)
+	}
+
+	if err := store.DeleteRefreshTokenSession(ctx, signature); err != nil {
+		t.Fatalf("DeleteRefreshTokenSession(): %v", err)
+	}
+
+	sess := &openid.DefaultSession{}
+
+	// Act
+	_, err := store.GetRefreshTokenSession(ctx, signature, sess)
+
+	// Assert — a deleted session must return fosite.ErrNotFound.
+	if err == nil {
+		t.Fatal("GetRefreshTokenSession() after deletion returned nil error, want fosite.ErrNotFound")
+	}
+	if err != fosite.ErrNotFound {
+		t.Errorf("GetRefreshTokenSession() error = %v, want fosite.ErrNotFound", err)
+	}
+}
+
+// TestRefreshTokenStore_RotateRefreshToken_OldSignatureGone verifies that
+// RotateRefreshToken removes the old refresh token signature from storage so
+// that it cannot be used again.
+//
+// Token rotation (RFC 6819 §5.2.2.3) requires that each use of a refresh token
+// produces a new token and invalidates the old one. After rotation the old
+// signature must return fosite.ErrNotFound.
+func TestRefreshTokenStore_RotateRefreshToken_OldSignatureGone(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	client := newTestClient("rt-rotate-client")
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	req := newAuthorizeRequest(client)
+	oldSig := "rt-rotate-old-sig-001"
+	requestID := req.GetID()
+
+	if err := store.CreateRefreshTokenSession(ctx, oldSig, "rt-rotate-access-001", req); err != nil {
+		t.Fatalf("CreateRefreshTokenSession(): %v", err)
+	}
+
+	// Act — rotate the old refresh token (simulates fosite's rotation step).
+	if err := store.RotateRefreshToken(ctx, requestID, oldSig); err != nil {
+		t.Fatalf("RotateRefreshToken(): %v", err)
+	}
+
+	sess := &openid.DefaultSession{}
+
+	// Assert — the old signature must no longer be found after rotation.
+	_, err := store.GetRefreshTokenSession(ctx, oldSig, sess)
+	if err == nil {
+		t.Fatal("GetRefreshTokenSession() after rotation returned nil error, want non-nil error (old token must be gone)")
+	}
+}
+
+// TestRefreshTokenStore_RevokeRefreshToken_DeletesByRequestID verifies that
+// RevokeRefreshToken removes all refresh tokens associated with the given
+// request ID from storage.
+//
+// RFC 7009 token revocation requires that all tokens bound to a single
+// authorization grant are invalidated together. fosite stores the request ID
+// in the request_data JSON blob; RevokeRefreshToken must perform a LIKE-based
+// lookup to find and delete them.
+func TestRefreshTokenStore_RevokeRefreshToken_DeletesByRequestID(t *testing.T) {
+
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	client := newTestClient("rt-revoke-client")
+	ctx := context.Background()
+
+	if err := store.CreateClient(ctx, client); err != nil {
+		t.Fatalf("CreateClient(): %v", err)
+	}
+
+	req := newAuthorizeRequest(client)
+	requestID := req.GetID()
+	signature := "rt-revoke-sig-001"
+
+	if err := store.CreateRefreshTokenSession(ctx, signature, "rt-revoke-access-001", req); err != nil {
+		t.Fatalf("CreateRefreshTokenSession(): %v", err)
+	}
+
+	// Confirm the token exists before revocation.
+	sess := &openid.DefaultSession{}
+	if _, err := store.GetRefreshTokenSession(ctx, signature, sess); err != nil {
+		t.Fatalf("GetRefreshTokenSession() before revocation: %v (want it to exist)", err)
+	}
+
+	// Act — revoke all tokens for this request ID.
+	if err := store.RevokeRefreshToken(ctx, requestID); err != nil {
+		t.Fatalf("RevokeRefreshToken(): %v", err)
+	}
+
+	// Assert — the token must no longer be found after revocation.
+	_, err := store.GetRefreshTokenSession(ctx, signature, sess)
+	if err == nil {
+		t.Fatal("GetRefreshTokenSession() after revocation returned nil error, want non-nil error (token must be gone)")
+	}
+}

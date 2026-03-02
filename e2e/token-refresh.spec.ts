@@ -8,12 +8,11 @@ import { test, expect } from "@playwright/test";
  * exchange (to obtain a refresh_token) → refresh token grant → token rotation
  * validation.
  *
- * All tests in this file are skipped (DLD-676) until the Refresh Token
- * grant factory (compose.OAuth2RefreshTokenGrantFactory) is registered and
- * confirmed to be working end-to-end.  Remove each `test.skip()` call once
- * the corresponding server-side feature is in place.
+ * Most tests in this file are active. The expired-token test (test 4) remains
+ * skipped because the E2E server's RefreshTokenLifespan is fixed at 24 hours
+ * and there is currently no mechanism to configure it at runtime.
  *
- * Prerequisites (already satisfied per codebase analysis):
+ * Prerequisites (satisfied):
  *   - compose.OAuth2RefreshTokenGrantFactory registered in main.go
  *   - test-client has grant_type=refresh_token registered
  *     (internal/testhelper/server.go)
@@ -194,9 +193,6 @@ test.describe("POST /oauth2/token — refresh_token happy path", () => {
   test(
     "issues a new access_token and a new refresh_token when a valid refresh_token is presented",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Arrange — complete the authorization code flow to obtain a refresh_token.
       const initialTokens = await obtainInitialTokens(page, context);
       const refreshToken = initialTokens.refresh_token as string;
@@ -247,9 +243,6 @@ test.describe("POST /oauth2/token — refresh_token access_token claims", () => 
   test(
     "new access_token is a valid JWT with correct iss, aud, scope, and exp claims",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Arrange — obtain initial tokens via authorization code flow.
       const initialTokens = await obtainInitialTokens(page, context);
       const refreshToken = initialTokens.refresh_token as string;
@@ -312,9 +305,6 @@ test.describe("POST /oauth2/token — refresh_token rotation: reuse rejected", (
   test(
     "returns 400 invalid_grant when an already-used refresh_token is presented again",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Arrange — obtain initial tokens via authorization code flow.
       const initialTokens = await obtainInitialTokens(page, context);
       const originalRefreshToken = initialTokens.refresh_token as string;
@@ -362,7 +352,7 @@ test.describe("POST /oauth2/token — refresh_token error: expired token", () =>
   test(
     "returns an error when an expired refresh_token is presented",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-676 is implemented
+      // TODO: Activate when test server supports configurable RefreshTokenLifespan
       test.skip();
 
       // Arrange — obtain initial tokens via authorization code flow.
@@ -412,9 +402,6 @@ test.describe("POST /oauth2/token — refresh_token error: unknown token", () =>
   test(
     "returns 400 invalid_grant when a completely unknown refresh_token is presented",
     async ({ page }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Act — submit a fabricated refresh_token that was never issued by the server.
       const response = await page.request.post(TOKEN_ENDPOINT, {
         headers: {
