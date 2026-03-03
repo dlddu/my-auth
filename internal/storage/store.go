@@ -189,6 +189,10 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 			GrantTypes:    grantTypesList,
 			ResponseTypes: responseTypesList,
 			Scopes:        strings.Split(scopes, " "),
+			// Audience is set to the client ID so that fosite's audience
+			// strategy accepts granted audiences during token refresh.
+			// RFC 8707: the client's own ID is always a valid audience.
+			Audience:      []string{clientID},
 		},
 		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
 	}, nil
@@ -381,8 +385,8 @@ func (s *Store) CreateRefreshTokenSession(ctx context.Context, signature string,
 	expiresAt := sessionExpiresAt(req, 24*time.Hour)
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO refresh_tokens (signature, client_id, subject, scopes, expires_at, request_data, access_token_signature)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO refresh_tokens (signature, client_id, subject, scopes, expires_at, request_data, access_token_signature, request_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		signature,
 		req.GetClient().GetID(),
 		"",
@@ -390,6 +394,7 @@ func (s *Store) CreateRefreshTokenSession(ctx context.Context, signature string,
 		expiresAt,
 		requestData,
 		accessTokenSignature,
+		req.GetID(),
 	)
 	return err
 }
@@ -429,6 +434,10 @@ func (s *Store) DeleteRefreshTokenSession(ctx context.Context, signature string)
 
 // RotateRefreshToken rotates the refresh token identified by the given
 // requestID and refreshTokenSignature.
+//
+// The requestID parameter is accepted to satisfy the fosite
+// oauth2.RefreshTokenStorage interface but is not used in this
+// implementation; the old token is identified solely by its signature.
 func (s *Store) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM refresh_tokens WHERE signature = ?`, refreshTokenSignature)
@@ -507,9 +516,7 @@ func (s *Store) DeleteOpenIDConnectSession(ctx context.Context, authorizeCode st
 // This implements the RFC 7009 token revocation requirement.
 func (s *Store) RevokeRefreshToken(ctx context.Context, requestID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM refresh_tokens WHERE signature IN (
-			SELECT signature FROM refresh_tokens WHERE request_data LIKE ?)`,
-		`%"`+requestID+`"%`)
+		`DELETE FROM refresh_tokens WHERE request_id = ?`, requestID)
 	return err
 }
 

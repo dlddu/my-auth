@@ -8,23 +8,14 @@ import { test, expect } from "@playwright/test";
  * exchange (to obtain a refresh_token) → refresh token grant → token rotation
  * validation.
  *
- * All tests in this file are skipped (DLD-676) until the Refresh Token
- * grant factory (compose.OAuth2RefreshTokenGrantFactory) is registered and
- * confirmed to be working end-to-end.  Remove each `test.skip()` call once
- * the corresponding server-side feature is in place.
+ * All 5 tests in this file are active. The test server is started with
+ * REFRESH_TOKEN_LIFESPAN=2s (see playwright.config.ts) so that the
+ * expired-token test (test 4) can wait for the token to expire.
  *
- * Prerequisites (already satisfied per codebase analysis):
+ * Prerequisites (satisfied):
  *   - compose.OAuth2RefreshTokenGrantFactory registered in main.go
  *   - test-client has grant_type=refresh_token registered
- *     (internal/testhelper/server.go)
- *   - fosite config has RefreshTokenLifespan: 24 * time.Hour
- *
- * Prerequisites for the expired-token test (not yet satisfied):
- *   - A mechanism to issue or simulate a refresh_token with a very short
- *     lifespan (e.g. RefreshTokenLifespan=1s in the test server config), or
- *     a test API that advances the server clock.
- *     When activating that test, set a short lifespan and add:
- *       await page.waitForTimeout(2000);
+ *   - REFRESH_TOKEN_LIFESPAN=2s set via env var in playwright.config.ts
  *
  * Parent issue: DLD-577 (MyAuth — 개인 인프라용 OAuth/OIDC Server)
  */
@@ -194,9 +185,6 @@ test.describe("POST /oauth2/token — refresh_token happy path", () => {
   test(
     "issues a new access_token and a new refresh_token when a valid refresh_token is presented",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Arrange — complete the authorization code flow to obtain a refresh_token.
       const initialTokens = await obtainInitialTokens(page, context);
       const refreshToken = initialTokens.refresh_token as string;
@@ -247,9 +235,6 @@ test.describe("POST /oauth2/token — refresh_token access_token claims", () => 
   test(
     "new access_token is a valid JWT with correct iss, aud, scope, and exp claims",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Arrange — obtain initial tokens via authorization code flow.
       const initialTokens = await obtainInitialTokens(page, context);
       const refreshToken = initialTokens.refresh_token as string;
@@ -312,9 +297,6 @@ test.describe("POST /oauth2/token — refresh_token rotation: reuse rejected", (
   test(
     "returns 400 invalid_grant when an already-used refresh_token is presented again",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Arrange — obtain initial tokens via authorization code flow.
       const initialTokens = await obtainInitialTokens(page, context);
       const originalRefreshToken = initialTokens.refresh_token as string;
@@ -362,25 +344,14 @@ test.describe("POST /oauth2/token — refresh_token error: expired token", () =>
   test(
     "returns an error when an expired refresh_token is presented",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Arrange — obtain initial tokens via authorization code flow.
       const initialTokens = await obtainInitialTokens(page, context);
       const refreshToken = initialTokens.refresh_token as string;
 
-      // Simulate expiry by waiting longer than the server's RefreshTokenLifespan.
-      // In a real test run this requires either:
-      //   a) Setting RefreshTokenLifespan=1s in the test server config and then:
-      //        await page.waitForTimeout(2000);
-      //   b) A test API that advances the server clock past the token's exp claim.
-      //
-      // When activating this test:
-      //   1. Configure the test server with RefreshTokenLifespan=1s.
-      //   2. Uncomment the waitForTimeout call below.
-      //   3. Remove the test.skip() call at the top of this test.
-      //
-      // await page.waitForTimeout(2000);
+      // Wait for the refresh token to expire.
+      // The test server is started with REFRESH_TOKEN_LIFESPAN=2s
+      // (see playwright.config.ts webServer command).
+      await page.waitForTimeout(3000);
 
       // Act — attempt to use the refresh_token after its lifespan has elapsed.
       const response = await page.request.post(TOKEN_ENDPOINT, {
@@ -412,9 +383,6 @@ test.describe("POST /oauth2/token — refresh_token error: unknown token", () =>
   test(
     "returns 400 invalid_grant when a completely unknown refresh_token is presented",
     async ({ page }) => {
-      // TODO: Activate when DLD-676 is implemented
-      test.skip();
-
       // Act — submit a fabricated refresh_token that was never issued by the server.
       const response = await page.request.post(TOKEN_ENDPOINT, {
         headers: {

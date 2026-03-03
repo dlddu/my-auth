@@ -848,3 +848,201 @@ func TestTokenHandler_AccessToken_ScopeMatchesGranted(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Token Refresh tests — grant_type=refresh_token (DLD-677)
+// ---------------------------------------------------------------------------
+
+// refreshTokenRequest performs a POST /oauth2/token with grant_type=refresh_token
+// and returns the parsed tokenResponse and the raw HTTP status code.
+//
+// The client authenticates via HTTP Basic Auth (client_secret_basic) using the
+// standard test-client credentials. On non-200 responses, only the status code
+// is returned (tokens will be nil).
+func refreshTokenRequest(t *testing.T, srvURL string, refreshToken string) (*tokenResponse, int) {
+	t.Helper()
+
+	form := url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+	}
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		srvURL+"/oauth2/token",
+		strings.NewReader(form.Encode()),
+	)
+	if err != nil {
+		t.Fatalf("refreshTokenRequest: http.NewRequest: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// fosite validates the client via HTTP Basic Auth at the token endpoint.
+	req.SetBasicAuth(validClientID, "test-client-secret")
+
+	plainClient := &http.Client{}
+	resp, err := plainClient.Do(req)
+	if err != nil {
+		t.Fatalf("refreshTokenRequest: POST /oauth2/token: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("refreshTokenRequest: io.ReadAll: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, resp.StatusCode
+	}
+
+	var tr tokenResponse
+	if err := json.Unmarshal(body, &tr); err != nil {
+		t.Fatalf("refreshTokenRequest: json.Unmarshal: %v — body: %s", err, body)
+	}
+
+	return &tr, resp.StatusCode
+}
+
+// ---------------------------------------------------------------------------
+// 14. TestTokenHandler_RefreshToken_IssuesNewTokens
+//     Happy path: after a successful authorization_code exchange, using the
+//     refresh_token to call POST /oauth2/token with grant_type=refresh_token
+//     must return a new access_token and a new refresh_token (token rotation).
+//
+//     RFC 6749 §6 defines the refresh token grant. fosite's
+//     OAuth2RefreshTokenGrantFactory enables this flow.
+// ---------------------------------------------------------------------------
+
+func TestTokenHandler_RefreshToken_IssuesNewTokens(t *testing.T) {
+	// Arrange — complete the authorization_code flow first to obtain tokens.
+	srv, _ := testhelper.NewTestServer(t)
+	code := loginAndGetCode(t, srv.URL, "test-nonce-rt-14")
+
+	initial, initialStatus := exchangeCodeForTokens(t, srv.URL, code)
+	if initialStatus != http.StatusOK {
+		t.Fatalf("initial token exchange: status = %d, want 200", initialStatus)
+	}
+	if initial.RefreshToken == "" {
+		t.Fatal("initial token exchange: refresh_token is empty, cannot proceed with refresh test")
+	}
+
+	// Act — use the refresh_token to obtain a new token set.
+	refreshed, refreshStatus := refreshTokenRequest(t, srv.URL, initial.RefreshToken)
+
+	// Assert — HTTP 200 OK.
+	if refreshStatus != http.StatusOK {
+		t.Fatalf("POST /oauth2/token (refresh_token) status = %d, want 200", refreshStatus)
+	}
+
+	// Assert — a new access_token is present and non-empty.
+	if refreshed.AccessToken == "" {
+		t.Error("refreshed access_token is empty, want a non-empty token")
+	}
+
+	// Assert — a new refresh_token is issued (token rotation per RFC 6819 §5.2.2.3).
+	if refreshed.RefreshToken == "" {
+		t.Error("refreshed refresh_token is empty, want a new rotated refresh token")
+	}
+
+	// Assert — token_type is "bearer" (case-insensitive per RFC 6749 §5.1).
+	if !strings.EqualFold(refreshed.TokenType, "bearer") {
+		t.Errorf("token_type = %q, want \"bearer\"", refreshed.TokenType)
+	}
+
+	// Assert — expires_in is a positive number.
+	if refreshed.ExpiresIn <= 0 {
+		t.Errorf("expires_in = %d, want a positive value", refreshed.ExpiresIn)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 15. TestTokenHandler_RefreshToken_NewAccessTokenDiffersFromOriginal
+//     The access_token returned after a refresh must be a different value from
+//     the original access_token. Reissuing the exact same token would defeat
+//     the purpose of refresh (a new short-lived credential should be issued).
+// ---------------------------------------------------------------------------
+
+func TestTokenHandler_RefreshToken_NewAccessTokenDiffersFromOriginal(t *testing.T) {
+	// Arrange
+	srv, _ := testhelper.NewTestServer(t)
+	code := loginAndGetCode(t, srv.URL, "test-nonce-rt-15")
+
+	initial, initialStatus := exchangeCodeForTokens(t, srv.URL, code)
+	if initialStatus != http.StatusOK {
+		t.Fatalf("initial token exchange: status = %d, want 200", initialStatus)
+	}
+	if initial.RefreshToken == "" {
+		t.Fatal("initial token exchange: refresh_token is empty")
+	}
+
+	// Act
+	refreshed, refreshStatus := refreshTokenRequest(t, srv.URL, initial.RefreshToken)
+
+	if refreshStatus != http.StatusOK {
+		t.Fatalf("refresh token request: status = %d, want 200", refreshStatus)
+	}
+
+	// Assert — the new access_token must differ from the original.
+	if refreshed.AccessToken == initial.AccessToken {
+		t.Error("refreshed access_token is identical to the original; want a freshly issued token")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 16. TestTokenHandler_RefreshToken_RotatedTokenRejected
+//     After a refresh_token is used once (rotated), presenting the same
+//     (now-invalidated) refresh_token again must result in a non-200 error.
+//
+//     Token rotation per RFC 6819 §5.2.2.3: the old refresh token must be
+//     invalidated immediately upon use to prevent replay attacks.
+// ---------------------------------------------------------------------------
+
+func TestTokenHandler_RefreshToken_RotatedTokenRejected(t *testing.T) {
+	// Arrange — obtain an initial set of tokens.
+	srv, _ := testhelper.NewTestServer(t)
+	code := loginAndGetCode(t, srv.URL, "test-nonce-rt-16")
+
+	initial, initialStatus := exchangeCodeForTokens(t, srv.URL, code)
+	if initialStatus != http.StatusOK {
+		t.Fatalf("initial token exchange: status = %d, want 200", initialStatus)
+	}
+	if initial.RefreshToken == "" {
+		t.Fatal("initial token exchange: refresh_token is empty")
+	}
+
+	// Use the refresh_token once (first use must succeed).
+	_, firstRefreshStatus := refreshTokenRequest(t, srv.URL, initial.RefreshToken)
+	if firstRefreshStatus != http.StatusOK {
+		t.Fatalf("first refresh: status = %d, want 200", firstRefreshStatus)
+	}
+
+	// Act — attempt to reuse the same (now-rotated) refresh_token.
+	_, secondRefreshStatus := refreshTokenRequest(t, srv.URL, initial.RefreshToken)
+
+	// Assert — the rotated (invalidated) token must be rejected.
+	if secondRefreshStatus == http.StatusOK {
+		t.Errorf("second use of rotated refresh_token: status = 200, want non-200 (replay must be rejected)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 17. TestTokenHandler_RefreshToken_UnknownToken_ReturnsError
+//     Supplying a refresh_token that was never issued by this server must
+//     result in a non-200 error response.
+//
+//     RFC 6749 §6 requires that invalid refresh tokens be rejected. fosite
+//     returns HTTP 400 with error=invalid_grant for unknown tokens.
+// ---------------------------------------------------------------------------
+
+func TestTokenHandler_RefreshToken_UnknownToken_ReturnsError(t *testing.T) {
+	// Arrange
+	srv, _ := testhelper.NewTestServer(t)
+
+	// Act — present a fabricated token that was never issued.
+	_, status := refreshTokenRequest(t, srv.URL, "totally-unknown-refresh-token-that-was-never-issued")
+
+	// Assert — the server must not return 200.
+	if status == http.StatusOK {
+		t.Errorf("POST /oauth2/token with unknown refresh_token: status = 200, want non-200")
+	}
+}

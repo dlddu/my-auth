@@ -61,7 +61,7 @@ export default defineConfig({
    * spawn `go run` inside the test runner process.
    */
   webServer: {
-    command: "go run ./cmd/server",
+    command: "SEED_TEST_CLIENT=1 REFRESH_TOKEN_LIFESPAN=2s go run ./cmd/server",
     url: "http://localhost:8080/healthz",
     reuseExistingServer,
     timeout: 30 * 1000,
