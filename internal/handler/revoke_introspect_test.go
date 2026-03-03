@@ -354,9 +354,9 @@ func TestIntrospectHandler_ValidToken_ContainsRequiredFields(t *testing.T) {
 		t.Error("introspect response: missing \"scope\" field, want a non-empty scope string")
 	}
 
-	// Assert — token_type must be "Bearer" (RFC 6749 §7.1).
-	if !strings.EqualFold(ir.TokenType, "bearer") {
-		t.Errorf("introspect response: token_type = %q, want \"Bearer\"", ir.TokenType)
+	// Assert — token_type is "Bearer" if present (RFC 7662 §2.2: OPTIONAL field).
+	if ir.TokenType != "" && !strings.EqualFold(ir.TokenType, "bearer") {
+		t.Errorf("introspect response: token_type = %q, want \"Bearer\" or empty", ir.TokenType)
 	}
 
 	// Assert — exp must be a positive unix timestamp.
