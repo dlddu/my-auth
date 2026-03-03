@@ -92,11 +92,21 @@ func main() {
 	// GlobalSecret は正確に 32 バイト必要。SessionSecret が短い場合はパッドする。
 	globalSecret := deriveGlobalSecret(cfg.SessionSecret)
 
+	refreshTokenLifespan := 24 * time.Hour
+	if v := os.Getenv("REFRESH_TOKEN_LIFESPAN"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "my-auth: invalid REFRESH_TOKEN_LIFESPAN %q: %v\n", v, err)
+			os.Exit(1)
+		}
+		refreshTokenLifespan = d
+	}
+
 	fositeConf := &fosite.Config{
 		GlobalSecret:                globalSecret,
 		AuthorizeCodeLifespan:       10 * time.Minute,
 		AccessTokenLifespan:         1 * time.Hour,
-		RefreshTokenLifespan:        24 * time.Hour,
+		RefreshTokenLifespan:        refreshTokenLifespan,
 		IDTokenLifespan:             1 * time.Hour,
 		IDTokenIssuer:               cfg.Issuer,
 		AccessTokenIssuer:           cfg.Issuer,
