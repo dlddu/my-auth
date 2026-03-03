@@ -185,8 +185,6 @@ test.describe("POST /oauth2/revoke — revocation happy path", () => {
   test(
     "returns 200 for a valid access_token, then introspecting the token yields active: false",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-678 is implemented
-      test.skip();
 
       // Arrange — obtain a valid access_token via the authorization code flow.
       const tokens = await obtainInitialTokens(page, context);
@@ -239,8 +237,6 @@ test.describe("POST /oauth2/introspect — introspection happy path", () => {
   test(
     "returns active: true with scope, client_id, and exp metadata for a valid access_token",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-678 is implemented
-      test.skip();
 
       // Arrange — obtain a valid access_token via the authorization code flow.
       const tokens = await obtainInitialTokens(page, context);
@@ -299,8 +295,6 @@ test.describe("POST /oauth2/introspect — revoked token", () => {
   test(
     "returns active: false when introspecting a previously revoked access_token",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-678 is implemented
-      test.skip();
 
       // Arrange — obtain a valid access_token via the authorization code flow.
       const tokens = await obtainInitialTokens(page, context);
@@ -351,8 +345,6 @@ test.describe("POST /oauth2/introspect — expired token", () => {
   test(
     "returns active: false when introspecting an expired access_token",
     async ({ page }) => {
-      // TODO: Activate when DLD-678 is implemented
-      test.skip();
 
       // Arrange — use a fabricated JWT-shaped token string whose exp claim is
       // set to a Unix timestamp in the past (2020-01-01T00:00:00Z = 1577836800).

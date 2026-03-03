@@ -48,6 +48,7 @@ var _ oauth2.AccessTokenStorage = (*Store)(nil)
 var _ oauth2.RefreshTokenStorage = (*Store)(nil)
 var _ openid.OpenIDConnectRequestStorage = (*Store)(nil)
 var _ pkce.PKCERequestStorage = (*Store)(nil)
+var _ oauth2.TokenRevocationStorage = (*Store)(nil)
 
 // ---------------------------------------------------------------------------
 // Internal: serialise / deserialise fosite.Requester

@@ -276,6 +276,8 @@ func newFositeProvider(store *storage.Store, cfg *config.Config, privateKey *rsa
 		compose.OpenIDConnectExplicitFactory,
 		compose.OAuth2PKCEFactory,
 		compose.OAuth2ClientCredentialsGrantFactory,
+		compose.OAuth2TokenRevocationFactory,
+		compose.OAuth2TokenIntrospectionFactory,
 	)
 }
 
@@ -330,6 +332,12 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	// /oauth2/device/verify is the canonical RFC 8628 path for API clients
 	// (e.g. Playwright E2E tests) that POST JSON-expecting requests.
 	r.Post("/oauth2/device/verify", handler.NewDeviceVerifyAPIHandler(cfg, db))
+
+	// Token Revocation endpoint (RFC 7009).
+	r.Post("/oauth2/revoke", handler.NewRevokeHandler(oauth2Provider))
+
+	// Token Introspection endpoint (RFC 7662).
+	r.Post("/oauth2/introspect", handler.NewIntrospectHandler(oauth2Provider))
 
 	return r
 }
