@@ -8,22 +8,14 @@ import { test, expect } from "@playwright/test";
  * exchange (to obtain a refresh_token) → refresh token grant → token rotation
  * validation.
  *
- * Most tests in this file are active. The expired-token test (test 4) remains
- * skipped because the E2E server's RefreshTokenLifespan is fixed at 24 hours
- * and there is currently no mechanism to configure it at runtime.
+ * All 5 tests in this file are active. The test server is started with
+ * REFRESH_TOKEN_LIFESPAN=2s (see playwright.config.ts) so that the
+ * expired-token test (test 4) can wait for the token to expire.
  *
  * Prerequisites (satisfied):
  *   - compose.OAuth2RefreshTokenGrantFactory registered in main.go
  *   - test-client has grant_type=refresh_token registered
- *     (internal/testhelper/server.go)
- *   - fosite config has RefreshTokenLifespan: 24 * time.Hour
- *
- * Prerequisites for the expired-token test (not yet satisfied):
- *   - A mechanism to issue or simulate a refresh_token with a very short
- *     lifespan (e.g. RefreshTokenLifespan=1s in the test server config), or
- *     a test API that advances the server clock.
- *     When activating that test, set a short lifespan and add:
- *       await page.waitForTimeout(2000);
+ *   - REFRESH_TOKEN_LIFESPAN=2s set via env var in playwright.config.ts
  *
  * Parent issue: DLD-577 (MyAuth — 개인 인프라용 OAuth/OIDC Server)
  */
@@ -352,25 +344,14 @@ test.describe("POST /oauth2/token — refresh_token error: expired token", () =>
   test(
     "returns an error when an expired refresh_token is presented",
     async ({ page, context }) => {
-      // TODO: Activate when test server supports configurable RefreshTokenLifespan
-      test.skip();
-
       // Arrange — obtain initial tokens via authorization code flow.
       const initialTokens = await obtainInitialTokens(page, context);
       const refreshToken = initialTokens.refresh_token as string;
 
-      // Simulate expiry by waiting longer than the server's RefreshTokenLifespan.
-      // In a real test run this requires either:
-      //   a) Setting RefreshTokenLifespan=1s in the test server config and then:
-      //        await page.waitForTimeout(2000);
-      //   b) A test API that advances the server clock past the token's exp claim.
-      //
-      // When activating this test:
-      //   1. Configure the test server with RefreshTokenLifespan=1s.
-      //   2. Uncomment the waitForTimeout call below.
-      //   3. Remove the test.skip() call at the top of this test.
-      //
-      // await page.waitForTimeout(2000);
+      // Wait for the refresh token to expire.
+      // The test server is started with REFRESH_TOKEN_LIFESPAN=2s
+      // (see playwright.config.ts webServer command).
+      await page.waitForTimeout(3000);
 
       // Act — attempt to use the refresh_token after its lifespan has elapsed.
       const response = await page.request.post(TOKEN_ENDPOINT, {
