@@ -337,7 +337,7 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	r.Post("/oauth2/revoke", handler.NewRevokeHandler(oauth2Provider))
 
 	// Token Introspection endpoint (RFC 7662).
-	r.Post("/oauth2/introspect", handler.NewIntrospectHandler(oauth2Provider))
+	r.Post("/oauth2/introspect", handler.NewIntrospectHandler(oauth2Provider, store))
 
 	return r
 }
