@@ -18,6 +18,10 @@ func NewIntrospectHandler(provider fosite.OAuth2Provider) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
+		// An empty session is created because fosite's NewIntrospectionRequest
+		// needs a session object to populate from the stored token data. If
+		// custom claims are needed in introspection responses in the future,
+		// pre-populate the session here before passing it to fosite.
 		mySession := session.NewSession("", "")
 
 		resp, err := provider.NewIntrospectionRequest(ctx, r, mySession)

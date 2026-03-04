@@ -521,10 +521,27 @@ func (s *Store) RevokeRefreshToken(ctx context.Context, requestID string) error 
 	return err
 }
 
-// RevokeAccessToken deletes all access tokens for the given request ID.
-// This implements the RFC 7009 token revocation requirement.
+// RevokeAccessToken revokes all access tokens for the given request ID.
+//
+// It implements the JWT jti blacklist pattern required by the specification:
+// the token's jti (request ID) is recorded in the revoked_tokens table so
+// that stateless JWT verification can detect revoked tokens. The token
+// record is also deleted from the tokens table so that fosite's
+// introspection flow (which calls GetAccessTokenSession) correctly returns
+// active: false.
 func (s *Store) RevokeAccessToken(ctx context.Context, requestID string) error {
+	// Record the jti in the revoked_tokens blacklist for stateless JWT
+	// verification. INSERT OR IGNORE avoids errors if the token has
+	// already been revoked.
 	_, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO revoked_tokens (jti) VALUES (?)`, requestID)
+	if err != nil {
+		return err
+	}
+
+	// Also delete the token record so that fosite's GetAccessTokenSession
+	// returns ErrNotFound, which makes introspection return active: false.
+	_, err = s.db.ExecContext(ctx,
 		`DELETE FROM tokens WHERE request_id = ?`, requestID)
 	return err
 }
