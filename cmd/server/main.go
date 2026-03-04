@@ -171,6 +171,8 @@ func main() {
 		compose.OpenIDConnectExplicitFactory,
 		compose.OAuth2PKCEFactory,
 		compose.OAuth2ClientCredentialsGrantFactory,
+		compose.OAuth2TokenRevocationFactory,
+		compose.OAuth2TokenIntrospectionFactory,
 	)
 
 	// 5. 라우터 설정
@@ -213,6 +215,12 @@ func main() {
 	// /oauth2/device/verify is the canonical RFC 8628 path for API clients
 	// (e.g. Playwright E2E tests) that POST JSON-expecting requests.
 	r.Post("/oauth2/device/verify", handler.NewDeviceVerifyAPIHandler(cfg, db))
+
+	// Token Revocation endpoint (RFC 7009).
+	r.Post("/oauth2/revoke", handler.NewRevokeHandler(oauth2Provider))
+
+	// Token Introspection endpoint (RFC 7662).
+	r.Post("/oauth2/introspect", handler.NewIntrospectHandler(oauth2Provider, store))
 
 	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)

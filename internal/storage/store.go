@@ -48,6 +48,7 @@ var _ oauth2.AccessTokenStorage = (*Store)(nil)
 var _ oauth2.RefreshTokenStorage = (*Store)(nil)
 var _ openid.OpenIDConnectRequestStorage = (*Store)(nil)
 var _ pkce.PKCERequestStorage = (*Store)(nil)
+var _ oauth2.TokenRevocationStorage = (*Store)(nil)
 
 // ---------------------------------------------------------------------------
 // Internal: serialise / deserialise fosite.Requester
@@ -520,12 +521,31 @@ func (s *Store) RevokeRefreshToken(ctx context.Context, requestID string) error 
 	return err
 }
 
-// RevokeAccessToken deletes all access tokens for the given request ID.
-// This implements the RFC 7009 token revocation requirement.
+// RevokeAccessToken revokes all access tokens for the given request ID.
+//
+// It implements the JWT jti blacklist pattern: the token's jti (request ID)
+// is recorded in the revoked_tokens table. The token record in the tokens
+// table is intentionally preserved so that introspection can still return
+// metadata (client_id, scope, sub, exp) alongside active: false.
 func (s *Store) RevokeAccessToken(ctx context.Context, requestID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM tokens WHERE request_id = ?`, requestID)
+		`INSERT OR IGNORE INTO revoked_tokens (jti) VALUES (?)`, requestID)
 	return err
+}
+
+// IsJTIRevoked checks whether the given jti exists in the revoked_tokens
+// blacklist table.
+func (s *Store) IsJTIRevoked(ctx context.Context, jti string) (bool, error) {
+	var exists int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT 1 FROM revoked_tokens WHERE jti = ?`, jti).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ---------------------------------------------------------------------------
