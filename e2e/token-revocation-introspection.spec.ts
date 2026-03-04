@@ -432,12 +432,15 @@ test.describe("POST /oauth2/introspect — unknown vs blacklisted token", () => 
       expect(afterResponse.status()).toBe(200);
       const afterBody = await afterResponse.json();
 
-      // The token that had metadata above must now be inactive with NO metadata.
+      // The token must now be inactive, but — unlike an unknown token —
+      // metadata is still returned because the jti exists in the blacklist
+      // and the token record is preserved in the tokens table.
       expect(afterBody.active).toBe(false);
-      expect(afterBody.scope).toBeUndefined();
-      expect(afterBody.client_id).toBeUndefined();
-      expect(afterBody.sub).toBeUndefined();
-      expect(afterBody.exp).toBeUndefined();
+      expect(afterBody.client_id).toBe(VALID_CLIENT_ID);
+      expect(typeof afterBody.scope).toBe("string");
+      expect(afterBody.scope).toContain("openid");
+      expect(typeof afterBody.sub).toBe("string");
+      expect(typeof afterBody.exp).toBe("number");
 
       // Step 4: double-revoke — the jti already exists in revoked_tokens,
       // so INSERT OR IGNORE must keep it idempotent (no error, still 200).

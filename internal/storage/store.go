@@ -523,27 +523,29 @@ func (s *Store) RevokeRefreshToken(ctx context.Context, requestID string) error 
 
 // RevokeAccessToken revokes all access tokens for the given request ID.
 //
-// It implements the JWT jti blacklist pattern required by the specification:
-// the token's jti (request ID) is recorded in the revoked_tokens table so
-// that stateless JWT verification can detect revoked tokens. The token
-// record is also deleted from the tokens table so that fosite's
-// introspection flow (which calls GetAccessTokenSession) correctly returns
-// active: false.
+// It implements the JWT jti blacklist pattern: the token's jti (request ID)
+// is recorded in the revoked_tokens table. The token record in the tokens
+// table is intentionally preserved so that introspection can still return
+// metadata (client_id, scope, sub, exp) alongside active: false.
 func (s *Store) RevokeAccessToken(ctx context.Context, requestID string) error {
-	// Record the jti in the revoked_tokens blacklist for stateless JWT
-	// verification. INSERT OR IGNORE avoids errors if the token has
-	// already been revoked.
 	_, err := s.db.ExecContext(ctx,
 		`INSERT OR IGNORE INTO revoked_tokens (jti) VALUES (?)`, requestID)
-	if err != nil {
-		return err
-	}
-
-	// Also delete the token record so that fosite's GetAccessTokenSession
-	// returns ErrNotFound, which makes introspection return active: false.
-	_, err = s.db.ExecContext(ctx,
-		`DELETE FROM tokens WHERE request_id = ?`, requestID)
 	return err
+}
+
+// IsJTIRevoked checks whether the given jti exists in the revoked_tokens
+// blacklist table.
+func (s *Store) IsJTIRevoked(ctx context.Context, jti string) (bool, error) {
+	var exists int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT 1 FROM revoked_tokens WHERE jti = ?`, jti).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ---------------------------------------------------------------------------

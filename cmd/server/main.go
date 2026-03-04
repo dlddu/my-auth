@@ -220,7 +220,7 @@ func main() {
 	r.Post("/oauth2/revoke", handler.NewRevokeHandler(oauth2Provider))
 
 	// Token Introspection endpoint (RFC 7662).
-	r.Post("/oauth2/introspect", handler.NewIntrospectHandler(oauth2Provider))
+	r.Post("/oauth2/introspect", handler.NewIntrospectHandler(oauth2Provider, store))
 
 	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
