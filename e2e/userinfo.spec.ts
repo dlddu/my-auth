@@ -7,12 +7,7 @@ import { test, expect } from "@playwright/test";
  * Tests UserInfo claim retrieval via Bearer access_token obtained through
  * the Authorization Code flow.
  *
- * All tests in this file are skipped (DLD-680) until the userinfo
- * endpoint is registered in the router.
- * Remove each `test.skip()` call once the corresponding server-side feature
- * is in place.
- *
- * Prerequisites (not yet satisfied — hence the skips):
+ * Prerequisites:
  *   - GET /oauth2/userinfo endpoint registered (custom handler using fosite IntrospectToken)
  *
  * Parent issue: DLD-577 (MyAuth — 개인 인프라용 OAuth/OIDC Server)
@@ -186,9 +181,6 @@ test.describe("GET /oauth2/userinfo — happy path (full scopes)", () => {
   test(
     "returns 200 with sub, name, and email claims when scope=openid profile email",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-680 is implemented
-      test.skip();
-
       // Arrange — obtain tokens via the full authorization code flow with all scopes.
       const tokens = await obtainInitialTokens(page, context, VALID_SCOPE);
       const accessToken = tokens.access_token as string;
@@ -238,9 +230,6 @@ test.describe("GET /oauth2/userinfo — scope=openid only", () => {
   test(
     "returns only sub claim and no profile/email claims when scope=openid",
     async ({ page, context }) => {
-      // TODO: Activate when DLD-680 is implemented
-      test.skip();
-
       // Arrange — obtain tokens using the minimal openid scope only.
       const tokens = await obtainInitialTokens(page, context, "openid");
       const accessToken = tokens.access_token as string;
@@ -283,9 +272,6 @@ test.describe("GET /oauth2/userinfo — error: invalid token", () => {
   test(
     "returns 401 with WWW-Authenticate: Bearer header for a forged access_token",
     async ({ page }) => {
-      // TODO: Activate when DLD-680 is implemented
-      test.skip();
-
       // Arrange — use a completely fabricated token that was never issued.
       const forgedToken =
         "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmYWtlIn0.invalidsignature";

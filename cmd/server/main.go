@@ -222,6 +222,9 @@ func main() {
 	// Token Introspection endpoint (RFC 7662).
 	r.Post("/oauth2/introspect", handler.NewIntrospectHandler(oauth2Provider, store))
 
+	// UserInfo endpoint (OIDC Core 1.0 §5.3).
+	r.Get("/oauth2/userinfo", handler.NewUserInfoHandler(oauth2Provider, cfg))
+
 	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	fmt.Fprintf(os.Stdout, "my-auth: listening on %s\n", addr)
