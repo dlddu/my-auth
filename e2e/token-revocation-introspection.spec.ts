@@ -338,7 +338,108 @@ test.describe("POST /oauth2/introspect — revoked token", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Introspect expired token — 만료된 access_token → active: false
+// 4. Unknown vs Blacklisted — 존재하지 않는 토큰 vs 블랙리스트 토큰 구분
+// ---------------------------------------------------------------------------
+
+test.describe("POST /oauth2/introspect — unknown vs blacklisted token", () => {
+  test(
+    "unknown token (never issued, not in revoked_tokens) returns active: false with no metadata",
+    async ({ page }) => {
+
+      // Arrange — a completely fabricated token that was never issued by the
+      // server.  It has no corresponding record in the tokens table and no
+      // entry in the revoked_tokens blacklist table.
+      const unknownToken = "unknown-token-never-issued-" + Date.now();
+
+      // Act — introspect the unknown token.
+      const response = await page.request.post(INTROSPECT_ENDPOINT, {
+        headers: {
+          Authorization: basicAuthHeader(VALID_CLIENT_ID, VALID_CLIENT_SECRET),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data: new URLSearchParams({
+          token: unknownToken,
+        }).toString(),
+      });
+
+      // Assert — RFC 7662 §2.2: unknown tokens must return 200 with active: false.
+      expect(response.status()).toBe(200);
+      const body = await response.json();
+      expect(body.active).toBe(false);
+
+      // Assert — no metadata fields should be present for an unknown token.
+      // The server must not leak information about token validity.
+      expect(body.scope).toBeUndefined();
+      expect(body.client_id).toBeUndefined();
+      expect(body.sub).toBeUndefined();
+      expect(body.exp).toBeUndefined();
+    }
+  );
+
+  test(
+    "blacklisted token (jti in revoked_tokens) returns active: false after being previously active",
+    async ({ page, context }) => {
+
+      // Arrange — obtain a valid access_token via the full authorization code flow.
+      const tokens = await obtainInitialTokens(page, context);
+      const accessToken = tokens.access_token as string;
+
+      // Step 1: verify the token is currently active (pre-revocation baseline).
+      const priorResponse = await page.request.post(INTROSPECT_ENDPOINT, {
+        headers: {
+          Authorization: basicAuthHeader(VALID_CLIENT_ID, VALID_CLIENT_SECRET),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data: new URLSearchParams({
+          token: accessToken,
+        }).toString(),
+      });
+      expect(priorResponse.status()).toBe(200);
+      const priorBody = await priorResponse.json();
+
+      // The token must be active before revocation — this is the baseline
+      // that proves the subsequent active: false is caused by blacklisting.
+      expect(priorBody.active).toBe(true);
+      expect(priorBody.client_id).toBe(VALID_CLIENT_ID);
+
+      // Step 2: revoke the token — this stores the jti in revoked_tokens
+      // (blacklist pattern) and removes the token record.
+      const revokeResponse = await page.request.post(REVOKE_ENDPOINT, {
+        headers: {
+          Authorization: basicAuthHeader(VALID_CLIENT_ID, VALID_CLIENT_SECRET),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data: new URLSearchParams({
+          token: accessToken,
+          token_type_hint: "access_token",
+        }).toString(),
+      });
+      expect(revokeResponse.status()).toBe(200);
+
+      // Step 3: introspect the now-blacklisted token.
+      const afterResponse = await page.request.post(INTROSPECT_ENDPOINT, {
+        headers: {
+          Authorization: basicAuthHeader(VALID_CLIENT_ID, VALID_CLIENT_SECRET),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data: new URLSearchParams({
+          token: accessToken,
+        }).toString(),
+      });
+      expect(afterResponse.status()).toBe(200);
+      const afterBody = await afterResponse.json();
+
+      // Assert — the token that was previously active: true must now be
+      // active: false because its jti was recorded in the revoked_tokens
+      // blacklist table. This distinguishes blacklisting from a token that
+      // simply never existed.
+      expect(afterBody.active).toBe(false);
+    }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 5. Introspect expired token — 만료된 access_token → active: false
 // ---------------------------------------------------------------------------
 
 test.describe("POST /oauth2/introspect — expired token", () => {
