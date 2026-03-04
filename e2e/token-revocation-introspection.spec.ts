@@ -377,14 +377,14 @@ test.describe("POST /oauth2/introspect — unknown vs blacklisted token", () => 
   );
 
   test(
-    "blacklisted token (jti in revoked_tokens) returns active: false after being previously active",
+    "blacklisted token (jti in revoked_tokens) transitions from active: true → false, double-revoke is idempotent",
     async ({ page, context }) => {
 
       // Arrange — obtain a valid access_token via the full authorization code flow.
       const tokens = await obtainInitialTokens(page, context);
       const accessToken = tokens.access_token as string;
 
-      // Step 1: verify the token is currently active (pre-revocation baseline).
+      // Step 1: verify the token is currently active with full metadata.
       const priorResponse = await page.request.post(INTROSPECT_ENDPOINT, {
         headers: {
           Authorization: basicAuthHeader(VALID_CLIENT_ID, VALID_CLIENT_SECRET),
@@ -397,14 +397,17 @@ test.describe("POST /oauth2/introspect — unknown vs blacklisted token", () => 
       expect(priorResponse.status()).toBe(200);
       const priorBody = await priorResponse.json();
 
-      // The token must be active before revocation — this is the baseline
-      // that proves the subsequent active: false is caused by blacklisting.
+      // Baseline — the token MUST be active with metadata before revocation.
+      // This proves the subsequent active: false is caused by blacklisting,
+      // not by the token never having existed.
       expect(priorBody.active).toBe(true);
       expect(priorBody.client_id).toBe(VALID_CLIENT_ID);
+      expect(typeof priorBody.scope).toBe("string");
+      expect(typeof priorBody.sub).toBe("string");
+      expect(typeof priorBody.exp).toBe("number");
 
-      // Step 2: revoke the token — this stores the jti in revoked_tokens
-      // (blacklist pattern) and removes the token record.
-      const revokeResponse = await page.request.post(REVOKE_ENDPOINT, {
+      // Step 2: first revoke — stores jti in revoked_tokens (INSERT).
+      const revokeResponse1 = await page.request.post(REVOKE_ENDPOINT, {
         headers: {
           Authorization: basicAuthHeader(VALID_CLIENT_ID, VALID_CLIENT_SECRET),
           "Content-Type": "application/x-www-form-urlencoded",
@@ -414,7 +417,7 @@ test.describe("POST /oauth2/introspect — unknown vs blacklisted token", () => 
           token_type_hint: "access_token",
         }).toString(),
       });
-      expect(revokeResponse.status()).toBe(200);
+      expect(revokeResponse1.status()).toBe(200);
 
       // Step 3: introspect the now-blacklisted token.
       const afterResponse = await page.request.post(INTROSPECT_ENDPOINT, {
@@ -429,11 +432,43 @@ test.describe("POST /oauth2/introspect — unknown vs blacklisted token", () => 
       expect(afterResponse.status()).toBe(200);
       const afterBody = await afterResponse.json();
 
-      // Assert — the token that was previously active: true must now be
-      // active: false because its jti was recorded in the revoked_tokens
-      // blacklist table. This distinguishes blacklisting from a token that
-      // simply never existed.
+      // The token that had metadata above must now be inactive with NO metadata.
       expect(afterBody.active).toBe(false);
+      expect(afterBody.scope).toBeUndefined();
+      expect(afterBody.client_id).toBeUndefined();
+      expect(afterBody.sub).toBeUndefined();
+      expect(afterBody.exp).toBeUndefined();
+
+      // Step 4: double-revoke — the jti already exists in revoked_tokens,
+      // so INSERT OR IGNORE must keep it idempotent (no error, still 200).
+      // This is the key behavioral difference from an unknown token:
+      // an unknown token has nothing in revoked_tokens, but a blacklisted
+      // token's jti persists across repeated revoke calls.
+      const revokeResponse2 = await page.request.post(REVOKE_ENDPOINT, {
+        headers: {
+          Authorization: basicAuthHeader(VALID_CLIENT_ID, VALID_CLIENT_SECRET),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data: new URLSearchParams({
+          token: accessToken,
+          token_type_hint: "access_token",
+        }).toString(),
+      });
+      expect(revokeResponse2.status()).toBe(200);
+
+      // After double-revoke, introspection must still return active: false.
+      const finalResponse = await page.request.post(INTROSPECT_ENDPOINT, {
+        headers: {
+          Authorization: basicAuthHeader(VALID_CLIENT_ID, VALID_CLIENT_SECRET),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data: new URLSearchParams({
+          token: accessToken,
+        }).toString(),
+      });
+      expect(finalResponse.status()).toBe(200);
+      const finalBody = await finalResponse.json();
+      expect(finalBody.active).toBe(false);
     }
   );
 });
