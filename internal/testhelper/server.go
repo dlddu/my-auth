@@ -339,5 +339,8 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	// Token Introspection endpoint (RFC 7662).
 	r.Post("/oauth2/introspect", handler.NewIntrospectHandler(oauth2Provider, store))
 
+	// UserInfo endpoint (OIDC Core 1.0 §5.3).
+	r.Get("/oauth2/userinfo", handler.NewUserInfoHandler(oauth2Provider, cfg))
+
 	return r
 }
