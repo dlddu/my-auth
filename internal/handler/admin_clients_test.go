@@ -482,6 +482,85 @@ func TestCreateClient_InvalidRedirectURI_Returns400(t *testing.T) {
 	}
 }
 
+// TestCreateClient_HTTPRedirectURI_Returns400 verifies that a non-localhost
+// http:// redirect_uri is rejected with 400 Bad Request.
+func TestCreateClient_HTTPRedirectURI_Returns400(t *testing.T) {
+	// Arrange
+	srv, client := testhelper.NewTestServer(t)
+	payload := createClientRequest{
+		RedirectURIs:  []string{"http://example.com/callback"},
+		GrantTypes:    []string{"authorization_code"},
+		ResponseTypes: []string{"code"},
+		Scopes:        []string{"openid"},
+		IsPublic:      false,
+	}
+
+	// Act
+	resp := doAdminRequest(t, client, http.MethodPost,
+		srv.URL+adminClientsURL, payload)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	// Assert
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("POST %s with http:// redirect_uri: status = %d, want 400; body = %s",
+			adminClientsURL, resp.StatusCode, body)
+	}
+}
+
+// TestCreateClient_LocalhostHTTP_Returns201 verifies that http://localhost
+// redirect URIs are allowed per RFC 8252.
+func TestCreateClient_LocalhostHTTP_Returns201(t *testing.T) {
+	// Arrange
+	srv, client := testhelper.NewTestServer(t)
+	payload := createClientRequest{
+		RedirectURIs:            []string{"http://localhost:9000/callback"},
+		GrantTypes:              []string{"authorization_code"},
+		ResponseTypes:           []string{"code"},
+		Scopes:                  []string{"openid"},
+		IsPublic:                false,
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
+
+	// Act
+	resp := doAdminRequest(t, client, http.MethodPost,
+		srv.URL+adminClientsURL, payload)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	// Assert
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("POST %s with http://localhost redirect_uri: status = %d, want 201; body = %s",
+			adminClientsURL, resp.StatusCode, body)
+	}
+}
+
+// TestCreateClient_FragmentInRedirectURI_Returns400 verifies that a redirect_uri
+// containing a fragment (#) is rejected with 400 per RFC 6749 §3.1.2.
+func TestCreateClient_FragmentInRedirectURI_Returns400(t *testing.T) {
+	// Arrange
+	srv, client := testhelper.NewTestServer(t)
+	payload := createClientRequest{
+		RedirectURIs:  []string{"https://example.com/callback#fragment"},
+		GrantTypes:    []string{"authorization_code"},
+		ResponseTypes: []string{"code"},
+		Scopes:        []string{"openid"},
+		IsPublic:      false,
+	}
+
+	// Act
+	resp := doAdminRequest(t, client, http.MethodPost,
+		srv.URL+adminClientsURL, payload)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	// Assert
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("POST %s with fragment in redirect_uri: status = %d, want 400; body = %s",
+			adminClientsURL, resp.StatusCode, body)
+	}
+}
+
 // TestCreateClient_InvalidGrantType_Returns400 verifies that a request with
 // an unrecognised grant_type is rejected with 400 Bad Request.
 func TestCreateClient_InvalidGrantType_Returns400(t *testing.T) {

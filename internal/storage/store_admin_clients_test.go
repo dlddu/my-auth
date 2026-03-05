@@ -18,6 +18,7 @@ package storage_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ory/fosite"
@@ -363,9 +364,12 @@ func TestUpdateClient_NonExistentID_ReturnsError(t *testing.T) {
 	// Act
 	err := store.UpdateClient(ctx, nonExistent)
 
-	// Assert — updating a non-existent client must return an error.
+	// Assert — updating a non-existent client must return ErrClientNotFound.
 	if err == nil {
 		t.Error("UpdateClient() with non-existent ID returned nil error, want non-nil error")
+	}
+	if !errors.Is(err, storage.ErrClientNotFound) {
+		t.Errorf("UpdateClient() error = %v, want storage.ErrClientNotFound", err)
 	}
 }
 
@@ -473,9 +477,12 @@ func TestDeleteClient_NonExistentID_ReturnsError(t *testing.T) {
 	// Act
 	err := store.DeleteClient(ctx, "does-not-exist-at-all")
 
-	// Assert — deleting a non-existent client must return an error.
+	// Assert — deleting a non-existent client must return ErrClientNotFound.
 	if err == nil {
 		t.Error("DeleteClient() with non-existent ID returned nil error, want non-nil error")
+	}
+	if !errors.Is(err, storage.ErrClientNotFound) {
+		t.Errorf("DeleteClient() error = %v, want storage.ErrClientNotFound", err)
 	}
 }
 
