@@ -84,6 +84,7 @@ jobs:
             '  username: "admin@test.local"' \
             '  password_hash: "$2a$12$f9hwtKC5D99r4BOC0UJwM.To6001PN8CS4TEVUEH.IQOGoPWuPZvy"' \
             'jwt_key_path: "keys/private.pem"' \
+            'admin_token: "admin-bearer-token-placeholder-dld682"' \
             > config.yaml
 
       - name: Start Go server in background
