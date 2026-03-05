@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -17,6 +18,10 @@ import (
 
 	"github.com/dlddu/my-auth/internal/session"
 )
+
+// ErrClientNotFound is returned when a client operation targets an ID
+// that does not exist in storage.
+var ErrClientNotFound = errors.New("client not found")
 
 // Store implements the fosite storage interfaces required by the OAuth2 /
 // OpenID Connect flow:
@@ -203,7 +208,7 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 // Returns a non-nil empty slice when no clients are registered.
 func (s *Store) ListClients(ctx context.Context) ([]fosite.Client, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method, is_public FROM clients`)
+		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method, is_public FROM clients ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("list clients: %w", err)
 	}
@@ -294,7 +299,7 @@ func (s *Store) UpdateClient(ctx context.Context, client fosite.Client) error {
 		return fmt.Errorf("update client %q: rows affected: %w", client.GetID(), err)
 	}
 	if n == 0 {
-		return fmt.Errorf("update client %q: not found", client.GetID())
+		return ErrClientNotFound
 	}
 	return nil
 }
@@ -312,7 +317,7 @@ func (s *Store) DeleteClient(ctx context.Context, id string) error {
 		return fmt.Errorf("delete client %q: rows affected: %w", id, err)
 	}
 	if n == 0 {
-		return fmt.Errorf("delete client %q: not found", id)
+		return ErrClientNotFound
 	}
 	return nil
 }

@@ -10,5 +10,5 @@ owner:
 jwt_key_path: "keys/private.pem"
 
 # Admin Bearer token for the Admin API endpoints (POST/GET/PUT/DELETE /api/admin/clients).
-# This is the placeholder token used by E2E tests (DLD-682).
-admin_token: "admin-bearer-token-placeholder-dld682"
+# Set via the ADMIN_TOKEN environment variable in production.
+# admin_token: ""

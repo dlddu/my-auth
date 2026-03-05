@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/fosite"
+
+	"github.com/dlddu/my-auth/internal/storage"
 )
 
 // AdminClientStore defines the storage operations required by admin client handlers.
@@ -132,12 +135,21 @@ func generateClientSecret() (string, error) {
 }
 
 // validateRedirectURIs checks that every URI in the list is a valid URL with a
-// scheme and host.
+// scheme and host, enforces HTTPS (except for localhost/127.0.0.1 per RFC 8252),
+// and rejects URIs containing a fragment component (per RFC 6749 §3.1.2).
 func validateRedirectURIs(uris []string) error {
 	for _, raw := range uris {
 		u, err := url.Parse(raw)
 		if err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("invalid redirect_uri: %q", raw)
+		}
+		if u.Fragment != "" {
+			return fmt.Errorf("redirect_uri must not contain a fragment: %q", raw)
+		}
+		hostname := u.Hostname()
+		isLoopback := hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1"
+		if u.Scheme != "https" && !isLoopback {
+			return fmt.Errorf("redirect_uri must use https scheme (except localhost): %q", raw)
 		}
 	}
 	return nil
@@ -398,8 +410,7 @@ func NewUpdateClientHandler(store AdminClientStore) http.HandlerFunc {
 		}
 
 		if err := store.UpdateClient(r.Context(), updated); err != nil {
-			// If error message contains "not found", treat as 404.
-			if strings.Contains(err.Error(), "not found") {
+			if errors.Is(err, storage.ErrClientNotFound) {
 				writeAdminError(w, http.StatusNotFound, "client not found")
 				return
 			}
@@ -421,7 +432,7 @@ func NewDeleteClientHandler(store AdminClientStore) http.HandlerFunc {
 
 		err := store.DeleteClient(r.Context(), id)
 		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
+			if errors.Is(err, storage.ErrClientNotFound) {
 				writeAdminError(w, http.StatusNotFound, "client not found")
 				return
 			}
