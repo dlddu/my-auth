@@ -233,6 +233,12 @@ func main() {
 		r.Get("/clients/{id}", handler.NewGetClientHandler(store))
 		r.Put("/clients/{id}", handler.NewUpdateClientHandler(store))
 		r.Delete("/clients/{id}", handler.NewDeleteClientHandler(store))
+		r.Get("/sessions", handler.NewListSessionsHandler(store))
+		r.Delete("/sessions", handler.NewDeleteAllSessionsHandler(store))
+		r.Delete("/sessions/{id}", handler.NewDeleteSessionHandler(store))
+		r.Get("/tokens", handler.NewListTokensHandler(store))
+		r.Delete("/tokens", handler.NewDeleteAllTokensHandler(store))
+		r.Delete("/tokens/{id}", handler.NewDeleteTokenHandler(store))
 	})
 
 	// 6. 서버 시작

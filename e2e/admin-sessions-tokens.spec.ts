@@ -3,11 +3,9 @@ import { test, expect } from "@playwright/test";
 /**
  * Admin Sessions and Tokens management e2e specs.
  *
- * All tests in this file are skipped (DLD-684) until the Admin session/token management
- * endpoints are implemented.
- * Remove each `test.skip()` call once the corresponding server-side feature is in place.
+ * Tests activated as part of DLD-685 implementation.
  *
- * Prerequisites (not yet satisfied — hence the skips):
+ * Covered endpoints:
  *   - GET    /api/admin/sessions         endpoint registered
  *   - DELETE /api/admin/sessions/:id     endpoint registered
  *   - GET    /api/admin/tokens           endpoint registered
@@ -195,9 +193,6 @@ test.describe("GET /api/admin/sessions — list active sessions happy path", () 
   test(
     "returns a JSON array of active sessions with id, client_id, subject, scopes, and expires_at",
     async ({ request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Arrange — no additional setup required; the seeded test data provides
       // at least the sessions created by the server's own seed step.
 
@@ -241,9 +236,6 @@ test.describe("GET /api/admin/sessions — error: missing admin token", () => {
   test(
     "returns 401 when the Authorization header is absent",
     async ({ request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Act — GET without an Authorization header.
       const response = await request.get(ADMIN_SESSIONS_ENDPOINT);
 
@@ -262,9 +254,6 @@ test.describe("DELETE /api/admin/sessions/:id — revoke session happy path", ()
   test(
     "revokes the session and the associated access_token becomes inactive on introspection",
     async ({ page, context, request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Arrange — obtain an access_token via the authorization code flow.
       // This creates an active session in the sessions table.
       const tokens = await obtainTokensViaAuthCode(page, context);
@@ -339,9 +328,6 @@ test.describe("DELETE /api/admin/sessions/:id — error: not found", () => {
   test(
     "returns 404 when the requested session id does not exist",
     async ({ request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Arrange — a session id that was never created.
       const nonExistentId = "session-does-not-exist-dld684-" + Date.now();
 
@@ -368,9 +354,6 @@ test.describe("GET /api/admin/tokens — list active tokens happy path", () => {
   test(
     "returns a JSON array of tokens with signature, client_id, subject, scopes, and expires_at",
     async ({ request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Arrange — issue a client_credentials access_token so the tokens table
       // has at least one entry when the list is fetched.
       await obtainClientCredentialsToken(request);
@@ -418,9 +401,6 @@ test.describe("GET /api/admin/tokens — error: missing admin token", () => {
   test(
     "returns 401 when the Authorization header is absent",
     async ({ request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Act — GET without an Authorization header.
       const response = await request.get(ADMIN_TOKENS_ENDPOINT);
 
@@ -439,9 +419,6 @@ test.describe("DELETE /api/admin/tokens/:id — revoke token happy path", () => 
   test(
     "revokes the token and subsequent introspection returns active: false",
     async ({ request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Arrange — obtain a client_credentials access_token.
       // client_credentials tokens are self-contained and do not require a
       // browser session, making this test runnable with the { request } fixture.
@@ -519,9 +496,6 @@ test.describe("DELETE /api/admin/tokens/:id — error: not found", () => {
   test(
     "returns 404 when the requested token id does not exist",
     async ({ request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Arrange — a token identifier that was never issued.
       const nonExistentId = "token-does-not-exist-dld684-" + Date.now();
 
@@ -548,9 +522,6 @@ test.describe("DELETE /api/admin/sessions — bulk revoke all sessions", () => {
   test(
     "revokes all active sessions and the sessions list becomes empty afterwards",
     async ({ page, context, request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Arrange — create at least one active session by completing an auth code flow.
       await obtainTokensViaAuthCode(page, context);
 
@@ -590,9 +561,6 @@ test.describe("DELETE /api/admin/tokens — bulk revoke all tokens", () => {
   test(
     "revokes all active tokens, the tokens list becomes empty, and a previously-active token is now inactive",
     async ({ request }) => {
-      // TODO: Activate when DLD-684 implementation is done
-      test.skip();
-
       // Arrange — issue a client_credentials token so the tokens table is
       // non-empty, and keep the raw access_token string for later introspection.
       const accessToken = await obtainClientCredentialsToken(request);
