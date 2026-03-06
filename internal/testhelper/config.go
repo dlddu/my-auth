@@ -40,6 +40,7 @@ func NewTestConfig(t *testing.T, dbPath string) *config.Config {
 			PasswordHash: testOwnerPasswordHash,
 		},
 		JWTKeyPath: testJWTKeyPath,
+		AdminToken: "admin-bearer-token-placeholder-dld682",
 	}
 
 	// Override Port to the default so Validate() does not reject it.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -17,6 +18,10 @@ import (
 
 	"github.com/dlddu/my-auth/internal/session"
 )
+
+// ErrClientNotFound is returned when a client operation targets an ID
+// that does not exist in storage.
+var ErrClientNotFound = errors.New("client not found")
 
 // Store implements the fosite storage interfaces required by the OAuth2 /
 // OpenID Connect flow:
@@ -197,6 +202,124 @@ func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error)
 		},
 		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
 	}, nil
+}
+
+// ListClients retrieves all registered OAuth2 clients from storage.
+// Returns a non-nil empty slice when no clients are registered.
+func (s *Store) ListClients(ctx context.Context) ([]fosite.Client, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, secret, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method, is_public FROM clients ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list clients: %w", err)
+	}
+	defer rows.Close()
+
+	clients := make([]fosite.Client, 0)
+	for rows.Next() {
+		var (
+			clientID                string
+			secret                  string
+			redirectURIs            string
+			grantTypes              string
+			responseTypes           string
+			scopes                  string
+			tokenEndpointAuthMethod string
+			isPublic                bool
+		)
+		if err := rows.Scan(&clientID, &secret, &redirectURIs, &grantTypes, &responseTypes, &scopes, &tokenEndpointAuthMethod, &isPublic); err != nil {
+			return nil, fmt.Errorf("list clients: scan: %w", err)
+		}
+
+		var redirectURIsList []string
+		if err := json.Unmarshal([]byte(redirectURIs), &redirectURIsList); err != nil {
+			return nil, fmt.Errorf("list clients: unmarshal redirect_uris for %q: %w", clientID, err)
+		}
+		var grantTypesList []string
+		if err := json.Unmarshal([]byte(grantTypes), &grantTypesList); err != nil {
+			return nil, fmt.Errorf("list clients: unmarshal grant_types for %q: %w", clientID, err)
+		}
+		var responseTypesList []string
+		if err := json.Unmarshal([]byte(responseTypes), &responseTypesList); err != nil {
+			return nil, fmt.Errorf("list clients: unmarshal response_types for %q: %w", clientID, err)
+		}
+
+		c := &fosite.DefaultOpenIDConnectClient{
+			DefaultClient: &fosite.DefaultClient{
+				ID:            clientID,
+				Secret:        []byte(secret),
+				Public:        isPublic,
+				RedirectURIs:  redirectURIsList,
+				GrantTypes:    grantTypesList,
+				ResponseTypes: responseTypesList,
+				Scopes:        strings.Split(scopes, " "),
+				Audience:      []string{clientID},
+			},
+			TokenEndpointAuthMethod: tokenEndpointAuthMethod,
+		}
+		clients = append(clients, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list clients: rows: %w", err)
+	}
+	return clients, nil
+}
+
+// UpdateClient updates an existing OAuth2 client's fields in storage.
+// Returns an error if no client with the given ID exists.
+func (s *Store) UpdateClient(ctx context.Context, client fosite.Client) error {
+	redirectURIs, err := json.Marshal(client.GetRedirectURIs())
+	if err != nil {
+		return fmt.Errorf("update client: marshal redirect_uris: %w", err)
+	}
+	grantTypes, err := json.Marshal(client.GetGrantTypes())
+	if err != nil {
+		return fmt.Errorf("update client: marshal grant_types: %w", err)
+	}
+	responseTypes, err := json.Marshal(client.GetResponseTypes())
+	if err != nil {
+		return fmt.Errorf("update client: marshal response_types: %w", err)
+	}
+	scopes := strings.Join(client.GetScopes(), " ")
+
+	var secret string
+	if dc, ok := client.(*fosite.DefaultOpenIDConnectClient); ok {
+		secret = string(dc.Secret)
+	} else if dc, ok := client.(*fosite.DefaultClient); ok {
+		secret = string(dc.Secret)
+	}
+
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE clients SET secret = ?, redirect_uris = ?, grant_types = ?, response_types = ?, scopes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		secret, string(redirectURIs), string(grantTypes), string(responseTypes), scopes, client.GetID())
+	if err != nil {
+		return fmt.Errorf("update client %q: %w", client.GetID(), err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update client %q: rows affected: %w", client.GetID(), err)
+	}
+	if n == 0 {
+		return ErrClientNotFound
+	}
+	return nil
+}
+
+// DeleteClient removes an OAuth2 client from storage by ID.
+// Returns an error if no client with the given ID exists.
+func (s *Store) DeleteClient(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx,
+		`DELETE FROM clients WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete client %q: %w", id, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete client %q: rows affected: %w", id, err)
+	}
+	if n == 0 {
+		return ErrClientNotFound
+	}
+	return nil
 }
 
 // CreateClient persists a new OAuth2 client.

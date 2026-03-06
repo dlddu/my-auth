@@ -225,6 +225,16 @@ func main() {
 	// UserInfo endpoint (OIDC Core 1.0 §5.3).
 	r.Get("/oauth2/userinfo", handler.NewUserInfoHandler(oauth2Provider, cfg))
 
+	// Admin Client CRUD endpoints — protected by Bearer token middleware.
+	r.Route("/api/admin", func(r chi.Router) {
+		r.Use(handler.NewAdminAuthMiddleware(cfg.AdminToken))
+		r.Post("/clients", handler.NewCreateClientHandler(store))
+		r.Get("/clients", handler.NewListClientsHandler(store))
+		r.Get("/clients/{id}", handler.NewGetClientHandler(store))
+		r.Put("/clients/{id}", handler.NewUpdateClientHandler(store))
+		r.Delete("/clients/{id}", handler.NewDeleteClientHandler(store))
+	})
+
 	// 6. 서버 시작
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	fmt.Fprintf(os.Stdout, "my-auth: listening on %s\n", addr)

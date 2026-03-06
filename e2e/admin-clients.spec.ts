@@ -90,8 +90,7 @@ test.describe("POST /api/admin/clients — create client happy path", () => {
   test(
     "creates a new OAuth client and returns client_secret in the response",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — build a unique client payload for this test run.
       const payload = buildClientPayload("create-" + Date.now());
@@ -137,8 +136,7 @@ test.describe("POST /api/admin/clients — error: missing admin token", () => {
   test(
     "returns 401 when the Authorization header is absent",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — build a valid payload but omit the Authorization header.
       const payload = buildClientPayload("unauth-" + Date.now());
@@ -166,8 +164,7 @@ test.describe("GET /api/admin/clients — list clients happy path", () => {
   test(
     "returns a list of clients without client_secret in any entry",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — create a client first so the list is non-empty.
       const payload = buildClientPayload("list-" + Date.now());
@@ -218,8 +215,7 @@ test.describe("GET /api/admin/clients/:id — get single client happy path", () 
   test(
     "returns the client detail by id without client_secret",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — create a client to retrieve.
       const payload = buildClientPayload("get-" + Date.now());
@@ -272,8 +268,7 @@ test.describe("GET /api/admin/clients/:id — error: not found", () => {
   test(
     "returns 404 when the requested client id does not exist",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — a client id that was never created.
       const nonExistentId = "does-not-exist-dld682-" + Date.now();
@@ -302,8 +297,7 @@ test.describe("PUT /api/admin/clients/:id — update client happy path", () => {
   test(
     "updates the client fields and reflects the changes on subsequent GET",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — create a client to modify.
       const payload = buildClientPayload("update-" + Date.now());
@@ -365,8 +359,7 @@ test.describe("PUT /api/admin/clients/:id — error: not found", () => {
   test(
     "returns 404 when trying to update a client that does not exist",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — a client id that was never created.
       const nonExistentId = "does-not-exist-update-dld682-" + Date.now();
@@ -398,8 +391,7 @@ test.describe("DELETE /api/admin/clients/:id — delete client happy path", () =
   test(
     "deletes the client and the client can no longer authenticate via client_credentials",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — create a client with client_credentials grant so that it can
       // attempt token requests.  Capture the plain-text client_secret from the
@@ -488,8 +480,7 @@ test.describe("DELETE /api/admin/clients/:id — error: not found", () => {
   test(
     "returns 404 when trying to delete a client that does not exist",
     async ({ request }) => {
-      // TODO: Activate when Admin API is implemented
-      test.skip();
+      // Activated: Admin API is implemented
 
       // Arrange — a client id that was never created.
       const nonExistentId = "does-not-exist-delete-dld682-" + Date.now();

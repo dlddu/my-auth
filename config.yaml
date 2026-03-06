@@ -8,3 +8,7 @@ owner:
 
 # Path to the RSA private key PEM file used for JWT signing (JWKS endpoint)
 jwt_key_path: "keys/private.pem"
+
+# Admin Bearer token for the Admin API endpoints (POST/GET/PUT/DELETE /api/admin/clients).
+# Set via the ADMIN_TOKEN environment variable in production.
+# admin_token: ""

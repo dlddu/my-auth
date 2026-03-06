@@ -22,6 +22,7 @@ type Config struct {
 	Owner         OwnerCredentials `yaml:"owner"`
 	JWTKeyPath    string           `yaml:"jwt_key_path"`
 	SessionSecret string           `yaml:"session_secret"`
+	AdminToken    string           `yaml:"admin_token"`
 }
 
 // Load reads and parses a YAML configuration file from the given path.
