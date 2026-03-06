@@ -732,11 +732,12 @@ func parseAdminTime(s string) time.Time {
 	return time.Time{}
 }
 
-// ListSessions returns all rows from the sessions table ordered by id.
-// Returns a non-nil empty slice when no sessions exist.
+// ListSessions returns all active access token sessions from the tokens table
+// ordered by created_at. Each access token row represents one admin-visible
+// session. Returns a non-nil empty slice when no sessions exist.
 func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, client_id, subject, scopes, expires_at, created_at FROM sessions ORDER BY id`)
+		`SELECT signature, client_id, subject, scopes, expires_at, created_at FROM tokens ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
 	}
@@ -745,18 +746,18 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	sessions := make([]SessionInfo, 0)
 	for rows.Next() {
 		var (
-			id        string
+			signature string
 			clientID  string
 			subject   string
 			scopes    string
 			expiresAt string
 			createdAt string
 		)
-		if err := rows.Scan(&id, &clientID, &subject, &scopes, &expiresAt, &createdAt); err != nil {
+		if err := rows.Scan(&signature, &clientID, &subject, &scopes, &expiresAt, &createdAt); err != nil {
 			return nil, fmt.Errorf("list sessions: scan: %w", err)
 		}
 		sessions = append(sessions, SessionInfo{
-			ID:        id,
+			ID:        signature,
 			ClientID:  clientID,
 			Subject:   subject,
 			Scopes:    scopes,
@@ -770,27 +771,68 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	return sessions, nil
 }
 
-// DeleteSession removes the session identified by id.
+// DeleteSession removes the access token session identified by id (signature)
+// from the tokens table and blacklists its request_id (jti) in revoked_tokens.
 // Returns ErrSessionNotFound if no such session exists.
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
-	if err != nil {
-		return fmt.Errorf("delete session %q: %w", id, err)
-	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("delete session %q: rows affected: %w", id, err)
-	}
-	if n == 0 {
+	// Look up the request_id (jti) before deleting.
+	var requestID string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT request_id FROM tokens WHERE signature = ?`, id).Scan(&requestID)
+	if err == sql.ErrNoRows {
 		return ErrSessionNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("delete session %q: select request_id: %w", id, err)
+	}
+
+	// Blacklist the jti.
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO revoked_tokens (jti) VALUES (?)`, requestID); err != nil {
+		return fmt.Errorf("delete session %q: revoke jti: %w", id, err)
+	}
+
+	// Remove the token record.
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM tokens WHERE signature = ?`, id); err != nil {
+		return fmt.Errorf("delete session %q: %w", id, err)
 	}
 	return nil
 }
 
-// DeleteAllSessions removes all rows from the sessions table.
+// DeleteAllSessions removes all access token sessions from the tokens table,
+// blacklisting every request_id (jti) in revoked_tokens first.
 func (s *Store) DeleteAllSessions(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions`)
+	// Collect all request_ids before deletion.
+	rows, err := s.db.QueryContext(ctx, `SELECT request_id FROM tokens`)
 	if err != nil {
+		return fmt.Errorf("delete all sessions: select request_ids: %w", err)
+	}
+
+	var requestIDs []string
+	for rows.Next() {
+		var rid string
+		if err := rows.Scan(&rid); err != nil {
+			rows.Close()
+			return fmt.Errorf("delete all sessions: scan request_id: %w", err)
+		}
+		requestIDs = append(requestIDs, rid)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("delete all sessions: rows: %w", err)
+	}
+
+	// Blacklist every jti.
+	for _, rid := range requestIDs {
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO revoked_tokens (jti) VALUES (?)`, rid); err != nil {
+			return fmt.Errorf("delete all sessions: revoke jti %q: %w", rid, err)
+		}
+	}
+
+	// Delete all token records.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM tokens`); err != nil {
 		return fmt.Errorf("delete all sessions: %w", err)
 	}
 	return nil

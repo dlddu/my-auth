@@ -65,7 +65,7 @@ func newSessionTestClient(clientID string) *fosite.DefaultOpenIDConnectClient {
 }
 
 // newSessionAuthorizeRequest builds a minimal *fosite.AuthorizeRequest for
-// seeding sessions in the sessions table via CreateOpenIDConnectSession.
+// seeding sessions in the tokens table via CreateAccessTokenSession.
 func newSessionAuthorizeRequest(client fosite.Client) *fosite.AuthorizeRequest {
 	sess := &openid.DefaultSession{
 		Claims: &jwt.IDTokenClaims{
@@ -100,8 +100,9 @@ func newTokenAuthorizeRequest(client fosite.Client) *fosite.AuthorizeRequest {
 	return req
 }
 
-// seedSession creates a client and an OIDC session (sessions table row) and
-// returns the session ID (authorize code) used as the key.
+// seedSession creates a client and an access token session (tokens table row)
+// and uses the given sessionID as the token signature (the key for ListSessions
+// / DeleteSession). Sessions in the admin API are backed by the tokens table.
 func seedSession(t *testing.T, store *storage.Store, clientID, sessionID string) {
 	t.Helper()
 
@@ -113,8 +114,8 @@ func seedSession(t *testing.T, store *storage.Store, clientID, sessionID string)
 	}
 
 	req := newSessionAuthorizeRequest(client)
-	if err := store.CreateOpenIDConnectSession(ctx, sessionID, req); err != nil {
-		t.Fatalf("seedSession: CreateOpenIDConnectSession(%q): %v", sessionID, err)
+	if err := store.CreateAccessTokenSession(ctx, sessionID, req); err != nil {
+		t.Fatalf("seedSession: CreateAccessTokenSession(%q): %v", sessionID, err)
 	}
 }
 
@@ -354,12 +355,54 @@ func TestDeleteSession_NonExistentID_ReturnsErrSessionNotFound(t *testing.T) {
 	}
 }
 
+// TestDeleteSession_AddsJTIToRevokedTokens verifies that DeleteSession inserts
+// the token's request_id (jti) into the revoked_tokens table so that
+// introspection returns active: false for the revoked access token.
+func TestDeleteSession_AddsJTIToRevokedTokens(t *testing.T) {
+	// Arrange
+	dsn := testhelper.NewTestDB(t)
+	store := newTestStore(t, dsn)
+
+	sessionID := "ds-jti-session-001"
+	clientID := "ds-jti-client"
+	seedSession(t, store, clientID, sessionID)
+
+	ctx := context.Background()
+
+	// Retrieve the session's request_id (jti) before deletion via ListTokens.
+	tokens, err := store.ListTokens(ctx)
+	if err != nil {
+		t.Fatalf("ListTokens() before DeleteSession: %v", err)
+	}
+	if len(tokens) != 1 {
+		t.Fatalf("ListTokens() returned %d tokens before deletion, want 1", len(tokens))
+	}
+	jti := tokens[0].RequestID
+	if jti == "" {
+		t.Fatal("TokenInfo.RequestID is empty; cannot verify jti blacklist entry")
+	}
+
+	// Act
+	if err := store.DeleteSession(ctx, sessionID); err != nil {
+		t.Fatalf("DeleteSession(%q): %v", sessionID, err)
+	}
+
+	// Assert — the jti must now appear in the revoked_tokens table.
+	revoked, err := store.IsJTIRevoked(ctx, jti)
+	if err != nil {
+		t.Fatalf("IsJTIRevoked(%q) after DeleteSession: %v", jti, err)
+	}
+	if !revoked {
+		t.Errorf("IsJTIRevoked(%q) = false after DeleteSession, want true", jti)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // DeleteAllSessions
 // ---------------------------------------------------------------------------
 
 // TestDeleteAllSessions_EmptyDB_Succeeds verifies that DeleteAllSessions
-// does not return an error on an empty sessions table.
+// does not return an error on an empty tokens table.
 func TestDeleteAllSessions_EmptyDB_Succeeds(t *testing.T) {
 	// Arrange
 	dsn := testhelper.NewTestDB(t)
