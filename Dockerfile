@@ -1,5 +1,16 @@
 # ---------------------------------------------------------------------------
-# Stage 1: build
+# Stage 1: build Admin SPA (React)
+# ---------------------------------------------------------------------------
+FROM node:22-alpine AS spa-builder
+
+WORKDIR /spa
+COPY internal/handler/admin-spa/package.json internal/handler/admin-spa/package-lock.json ./
+RUN npm ci
+COPY internal/handler/admin-spa/ .
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Stage 2: build Go binary
 # ---------------------------------------------------------------------------
 FROM golang:1.24-alpine AS builder
 
@@ -9,8 +20,11 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of the source tree and build a statically linked binary.
+# Copy the rest of the source tree.
 COPY . .
+
+# Copy the built SPA dist into the embed directory.
+COPY --from=spa-builder /spa/dist internal/handler/admin-spa/dist/
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w" -trimpath \
     -o /out/my-auth ./cmd/server
