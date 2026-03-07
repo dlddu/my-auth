@@ -130,23 +130,26 @@ type adminTokenItem struct {
 // 테스트 데이터 시딩 헬퍼
 // ---------------------------------------------------------------------------
 
-// seedSession은 sessions 테이블에 테스트용 세션 레코드를 직접 INSERT합니다.
+// seedSession은 authorization_codes 테이블에 테스트용 세션 레코드를 직접 INSERT합니다.
+// used=1로 설정하여 완료된 인증 세션을 시뮬레이션합니다.
+// request_data에는 request_id (id 필드)가 포함되어 DeleteSession 시 토큰 revocation에 사용됩니다.
 // clientID는 사전에 clients 테이블에 존재해야 합니다.
 func seedSession(t *testing.T, db *sql.DB, id, clientID, subject, scopes string, expiresAt time.Time) {
 	t.Helper()
 
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO sessions (id, client_id, subject, scopes, expires_at, request_data)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO authorization_codes (code, client_id, subject, redirect_uri, scopes, expires_at, used, request_data)
+		 VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
 		id,
 		clientID,
 		subject,
+		"",
 		scopes,
 		expiresAt.UTC().Format(time.RFC3339),
-		"{}",
+		fmt.Sprintf(`{"id":"%s"}`, id),
 	)
 	if err != nil {
-		t.Fatalf("seedSession: INSERT sessions id=%q: %v", id, err)
+		t.Fatalf("seedSession: INSERT authorization_codes code=%q: %v", id, err)
 	}
 }
 
