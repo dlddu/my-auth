@@ -14,6 +14,7 @@ type AdminStatsStore interface {
 	ListClients(ctx context.Context) ([]fosite.Client, error)
 	ListSessions(ctx context.Context) ([]storage.SessionInfo, error)
 	ListTokens(ctx context.Context) ([]storage.TokenInfo, error)
+	CountAuth24h(ctx context.Context) (int, error)
 }
 
 // adminStatsResponse is the JSON shape for GET /api/admin/stats.
@@ -28,7 +29,6 @@ type adminStatsResponse struct {
 // GET /api/admin/stats.
 //
 // It returns counts for clients, sessions, tokens, and auth_24h.
-// CountAuth24h is not yet implemented and always returns 0.
 func NewAdminStatsHandler(store AdminStatsStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		clients, err := store.ListClients(r.Context())
@@ -49,11 +49,17 @@ func NewAdminStatsHandler(store AdminStatsStore) http.HandlerFunc {
 			return
 		}
 
+		auth24h, err := store.CountAuth24h(r.Context())
+		if err != nil {
+			writeAdminError(w, http.StatusInternalServerError, "failed to count auth 24h")
+			return
+		}
+
 		writeAdminJSON(w, http.StatusOK, adminStatsResponse{
 			Clients:  len(clients),
 			Sessions: len(sessions),
 			Tokens:   len(tokens),
-			Auth24h:  0,
+			Auth24h:  auth24h,
 		})
 	}
 }

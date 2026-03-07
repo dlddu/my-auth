@@ -7,5 +7,10 @@ node_modules/
 playwright-report/
 test-results/
 
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
 # RSA keys
 keys/

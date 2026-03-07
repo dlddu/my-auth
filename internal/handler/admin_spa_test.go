@@ -41,6 +41,8 @@ package handler_test
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -55,8 +57,29 @@ const adminRootURL = "/admin"
 const adminLoginPageURL = "/admin/login"
 const adminClientsPageURL = "/admin/clients"
 const adminSettingsPageURL = "/admin/settings"
-const adminAssetsMainJSURL = "/admin/assets/main.js"
 const adminNonexistentURL = "/admin/this-page-does-not-exist"
+
+// discoverJSAssetURL fetches /admin and extracts the first .js asset path
+// from the HTML. Vite generates hashed filenames, so we cannot hardcode them.
+func discoverJSAssetURL(t *testing.T, srv *httptest.Server, client *http.Client) string {
+	t.Helper()
+	resp, err := client.Get(srv.URL + adminRootURL)
+	if err != nil {
+		t.Fatalf("discoverJSAssetURL: GET %s: %v", adminRootURL, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("discoverJSAssetURL: io.ReadAll: %v", err)
+	}
+	// Match src="/admin/assets/index-HASH.js" or similar patterns.
+	re := regexp.MustCompile(`src="(/admin/assets/[^"]+\.js)"`)
+	matches := re.FindSubmatch(body)
+	if matches == nil {
+		t.Fatal("discoverJSAssetURL: no JS asset found in index.html")
+	}
+	return string(matches[1])
+}
 
 // ---------------------------------------------------------------------------
 // GET /admin — 루트 대시보드 페이지
@@ -299,42 +322,44 @@ func TestAdminSPA_UnknownPath_Returns200WithIndexHTML(t *testing.T) {
 // GET /admin/assets/main.js — 정적 파일 서빙
 // ---------------------------------------------------------------------------
 
-// TestAdminSPA_StaticAsset_Returns200은 GET /admin/assets/main.js가
+// TestAdminSPA_StaticAsset_Returns200은 GET /admin/assets/*.js가
 // 200 OK를 반환하는지 검증합니다.
 func TestAdminSPA_StaticAsset_Returns200(t *testing.T) {
 	// Arrange
 	srv, client := testhelper.NewTestServer(t)
+	jsURL := discoverJSAssetURL(t, srv, client)
 
 	// Act
-	resp, err := client.Get(srv.URL + adminAssetsMainJSURL)
+	resp, err := client.Get(srv.URL + jsURL)
 	if err != nil {
-		t.Fatalf("GET %s: %v", adminAssetsMainJSURL, err)
+		t.Fatalf("GET %s: %v", jsURL, err)
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// Assert — 200 OK (정적 파일이 embed되어 있어야 함)
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("GET %s: status = %d, want 200", adminAssetsMainJSURL, resp.StatusCode)
+		t.Errorf("GET %s: status = %d, want 200", jsURL, resp.StatusCode)
 	}
 }
 
-// TestAdminSPA_StaticAsset_ContentTypeIsJavaScript는 main.js 응답의
+// TestAdminSPA_StaticAsset_ContentTypeIsJavaScript는 JS 에셋 응답의
 // Content-Type이 JavaScript 관련 MIME 타입인지 검증합니다.
 func TestAdminSPA_StaticAsset_ContentTypeIsJavaScript(t *testing.T) {
 	// Arrange
 	srv, client := testhelper.NewTestServer(t)
+	jsURL := discoverJSAssetURL(t, srv, client)
 
 	// Act
-	resp, err := client.Get(srv.URL + adminAssetsMainJSURL)
+	resp, err := client.Get(srv.URL + jsURL)
 	if err != nil {
-		t.Fatalf("GET %s: %v", adminAssetsMainJSURL, err)
+		t.Fatalf("GET %s: %v", jsURL, err)
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET %s: status = %d, want 200", adminAssetsMainJSURL, resp.StatusCode)
+		t.Fatalf("GET %s: status = %d, want 200", jsURL, resp.StatusCode)
 	}
 
 	// Assert — Content-Type이 JavaScript MIME 타입이어야 합니다.
@@ -343,7 +368,7 @@ func TestAdminSPA_StaticAsset_ContentTypeIsJavaScript(t *testing.T) {
 	isJS := strings.Contains(ct, "javascript") || strings.Contains(ct, "application/js")
 	if !isJS {
 		t.Errorf("GET %s: Content-Type = %q, want JavaScript MIME type (e.g. application/javascript)",
-			adminAssetsMainJSURL, ct)
+			jsURL, ct)
 	}
 }
 
@@ -352,6 +377,7 @@ func TestAdminSPA_StaticAsset_ContentTypeIsJavaScript(t *testing.T) {
 func TestAdminSPA_StaticAsset_BodyIsNotIndexHTML(t *testing.T) {
 	// Arrange
 	srv, client := testhelper.NewTestServer(t)
+	jsURL := discoverJSAssetURL(t, srv, client)
 
 	// Act — index.html 내용을 가져옵니다.
 	rootResp, err := client.Get(srv.URL + adminRootURL)
@@ -364,10 +390,10 @@ func TestAdminSPA_StaticAsset_BodyIsNotIndexHTML(t *testing.T) {
 		t.Fatalf("io.ReadAll (root): %v", err)
 	}
 
-	// Act — main.js 내용을 가져옵니다.
-	jsResp, err := client.Get(srv.URL + adminAssetsMainJSURL)
+	// Act — JS 에셋 내용을 가져옵니다.
+	jsResp, err := client.Get(srv.URL + jsURL)
 	if err != nil {
-		t.Fatalf("GET %s: %v", adminAssetsMainJSURL, err)
+		t.Fatalf("GET %s: %v", jsURL, err)
 	}
 	defer jsResp.Body.Close()
 	jsBody, err := io.ReadAll(jsResp.Body)
@@ -379,10 +405,10 @@ func TestAdminSPA_StaticAsset_BodyIsNotIndexHTML(t *testing.T) {
 		t.Skip("skipping body comparison: one or both endpoints returned non-200")
 	}
 
-	// Assert — main.js 내용이 index.html과 달라야 합니다.
+	// Assert — JS 에셋 내용이 index.html과 달라야 합니다.
 	if string(rootBody) == string(jsBody) {
 		t.Errorf("GET %s and GET %s returned identical content; JS file should not be index.html fallback",
-			adminRootURL, adminAssetsMainJSURL)
+			adminRootURL, jsURL)
 	}
 }
 
