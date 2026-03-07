@@ -856,15 +856,14 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 // DeleteAllSessions removes all completed authorization sessions from
 // authorization_codes (used = 1) and revokes their associated access tokens.
 func (s *Store) DeleteAllSessions(ctx context.Context) error {
-	// Step 1: Extract request_ids from all used authorization codes and
-	// revoke their associated access tokens in the revoked_tokens blacklist.
+	// Step 1: Collect all request IDs from used authorization codes.
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT request_data FROM authorization_codes WHERE used = 1`)
 	if err != nil {
 		return fmt.Errorf("delete all sessions: query: %w", err)
 	}
-	defer rows.Close()
 
+	var requestIDs []string
 	for rows.Next() {
 		var requestData string
 		if err := rows.Scan(&requestData); err != nil {
@@ -874,14 +873,19 @@ func (s *Store) DeleteAllSessions(ctx context.Context) error {
 			ID string `json:"id"`
 		}
 		if json.Unmarshal([]byte(requestData), &rj) == nil && rj.ID != "" {
-			_, _ = s.db.ExecContext(ctx,
-				`INSERT OR IGNORE INTO revoked_tokens (jti)
-				 SELECT request_id FROM tokens WHERE request_id = ?`, rj.ID)
+			requestIDs = append(requestIDs, rj.ID)
 		}
 	}
 	rows.Close()
 
-	// Step 2: Delete all used authorization code sessions.
+	// Step 2: Revoke associated tokens (after rows are closed).
+	for _, reqID := range requestIDs {
+		_, _ = s.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO revoked_tokens (jti)
+			 SELECT request_id FROM tokens WHERE request_id = ?`, reqID)
+	}
+
+	// Step 3: Delete all used authorization code sessions.
 	_, err = s.db.ExecContext(ctx, `DELETE FROM authorization_codes WHERE used = 1`)
 	if err != nil {
 		return fmt.Errorf("delete all sessions: %w", err)
