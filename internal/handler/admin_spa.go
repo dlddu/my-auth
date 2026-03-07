@@ -223,6 +223,13 @@ func NewAdminSPAHandler() http.Handler {
 		panic("handler: admin spa: sub fs: " + err.Error())
 	}
 
+	// Pre-read index.html so we can serve it directly for SPA fallback
+	// without going through http.FileServer (which redirects directories).
+	indexHTML, err := fs.ReadFile(distFS, "index.html")
+	if err != nil {
+		panic("handler: admin spa: read index.html: " + err.Error())
+	}
+
 	fileServer := http.FileServer(http.FS(distFS))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -252,9 +259,9 @@ func NewAdminSPAHandler() http.Handler {
 			return
 		}
 
-		// No extension — SPA routing fallback: serve index.html.
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = "/index.html"
-		fileServer.ServeHTTP(w, r2)
+		// No extension — SPA routing fallback: serve index.html directly.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(indexHTML)
 	})
 }
