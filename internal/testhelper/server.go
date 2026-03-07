@@ -103,6 +103,52 @@ func NewTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	return srv, client
 }
 
+// NewTestServerWithDSN creates a minimal httptest.Server backed by the SQLite
+// database identified by dsn. This allows test code to share the same database
+// as the server by opening a second connection to the same file.
+//
+// The server is started immediately and registered with t.Cleanup so it is
+// closed automatically when the test finishes.
+func NewTestServerWithDSN(t *testing.T, dsn string) (*httptest.Server, *http.Client) {
+	t.Helper()
+
+	// Build config pointing at the provided database.
+	cfg := NewTestConfig(t, dsn)
+
+	// Open a server-side connection to the same database file.
+	db, err := database.Open(dsn)
+	if err != nil {
+		t.Fatalf("testhelper: open database for server (NewTestServerWithDSN): %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Logf("testhelper: close server db (NewTestServerWithDSN): %v", err)
+		}
+	})
+
+	// Generate a test RSA key pair (in-memory, no disk I/O required).
+	key, err := keygen.GenerateRSAKeyPair(keygen.DefaultKeyBits)
+	if err != nil {
+		t.Fatalf("testhelper: generate RSA key pair (NewTestServerWithDSN): %v", err)
+	}
+
+	// Seed the test OAuth2 client into the database.
+	// The caller may have already inserted some rows; seedTestClient is
+	// idempotent against duplicate-key errors so it is safe to call again.
+	seedTestClient(t, db)
+
+	// Build the HTTP handler.
+	h := buildRouter(cfg, key, db)
+
+	// Start an unencrypted test server on a random local port.
+	srv := httptest.NewServer(h)
+	t.Cleanup(func() {
+		srv.Close()
+	})
+
+	return srv, srv.Client()
+}
+
 // seedTestClient inserts the standard test OAuth2 clients into the database.
 // The confidential client ID matches testClientID and is used by authorize
 // endpoint tests. The public client supports PKCE-based flows.
@@ -350,6 +396,15 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 		r.Get("/clients/{id}", handler.NewGetClientHandler(store))
 		r.Put("/clients/{id}", handler.NewUpdateClientHandler(store))
 		r.Delete("/clients/{id}", handler.NewDeleteClientHandler(store))
+
+		// Admin Session & Token management endpoints.
+		r.Get("/sessions", handler.NewListSessionsHandler(store))
+		r.Delete("/sessions", handler.NewDeleteAllSessionsHandler(store))
+		r.Delete("/sessions/{id}", handler.NewDeleteSessionHandler(store))
+
+		r.Get("/tokens", handler.NewListTokensHandler(store))
+		r.Delete("/tokens", handler.NewDeleteAllTokensHandler(store))
+		r.Delete("/tokens/{id}", handler.NewDeleteTokenHandler(store))
 	})
 
 	return r

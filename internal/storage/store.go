@@ -23,6 +23,35 @@ import (
 // that does not exist in storage.
 var ErrClientNotFound = errors.New("client not found")
 
+// ErrSessionNotFound is returned when a session operation targets an ID
+// that does not exist in storage.
+var ErrSessionNotFound = errors.New("session not found")
+
+// ErrTokenNotFound is returned when a token operation targets a signature
+// that does not exist in storage.
+var ErrTokenNotFound = errors.New("token not found")
+
+// SessionInfo holds summary information about an OpenID Connect session.
+type SessionInfo struct {
+	ID        string `json:"id"`
+	ClientID  string `json:"client_id"`
+	Subject   string `json:"subject"`
+	Scopes    string `json:"scopes"`
+	ExpiresAt string `json:"expires_at"`
+	CreatedAt string `json:"created_at"`
+}
+
+// TokenInfo holds summary information about an access token.
+type TokenInfo struct {
+	Signature string `json:"signature"`
+	RequestID string `json:"request_id"`
+	ClientID  string `json:"client_id"`
+	Subject   string `json:"subject"`
+	Scopes    string `json:"scopes"`
+	ExpiresAt string `json:"expires_at"`
+	CreatedAt string `json:"created_at"`
+}
+
 // Store implements the fosite storage interfaces required by the OAuth2 /
 // OpenID Connect flow:
 //
@@ -745,4 +774,201 @@ func (s *Store) DeletePKCERequestSession(ctx context.Context, signature string) 
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM pkce_codes WHERE signature = ?`, signature)
 	return err
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Session management
+// ---------------------------------------------------------------------------
+
+// ListSessions returns all completed authorization sessions from the
+// authorization_codes table (used = 1). The authorization_codes table
+// preserves rows after the auth code has been exchanged for a token,
+// unlike the sessions table which fosite empties during token issuance.
+// Returns a non-nil empty slice when no sessions exist.
+func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT code, client_id, subject, scopes, expires_at, created_at
+		 FROM authorization_codes WHERE used = 1 ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]SessionInfo, 0)
+	for rows.Next() {
+		var item SessionInfo
+		if err := rows.Scan(&item.ID, &item.ClientID, &item.Subject, &item.Scopes, &item.ExpiresAt, &item.CreatedAt); err != nil {
+			return nil, fmt.Errorf("list sessions: scan: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list sessions: rows: %w", err)
+	}
+	return items, nil
+}
+
+// DeleteSession removes a completed authorization session by its code (id)
+// from the authorization_codes table (used = 1) and invalidates any
+// associated access tokens by recording their request_ids in revoked_tokens.
+// Returns ErrSessionNotFound if no used authorization code with that id exists.
+func (s *Store) DeleteSession(ctx context.Context, id string) error {
+	// Fetch the request_data from authorization_codes to extract the request ID.
+	row := s.db.QueryRowContext(ctx,
+		`SELECT request_data FROM authorization_codes WHERE code = ? AND used = 1`, id)
+
+	var requestData string
+	if err := row.Scan(&requestData); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrSessionNotFound
+		}
+		return fmt.Errorf("delete session %q: fetch request_data: %w", id, err)
+	}
+
+	// Extract the request ID ("id" field) from the stored JSON.
+	// This links the auth code session to the access token stored in tokens table.
+	var rj struct {
+		ID string `json:"id"`
+	}
+	if jsonErr := json.Unmarshal([]byte(requestData), &rj); jsonErr == nil && rj.ID != "" {
+		// Revoke any access tokens associated with this authorization request.
+		_, _ = s.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO revoked_tokens (jti)
+			 SELECT request_id FROM tokens WHERE request_id = ?`, rj.ID)
+	}
+
+	// Delete the authorization code session.
+	result, err := s.db.ExecContext(ctx,
+		`DELETE FROM authorization_codes WHERE code = ? AND used = 1`, id)
+	if err != nil {
+		return fmt.Errorf("delete session %q: %w", id, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete session %q: rows affected: %w", id, err)
+	}
+	if n == 0 {
+		return ErrSessionNotFound
+	}
+	return nil
+}
+
+// DeleteAllSessions removes all completed authorization sessions from
+// authorization_codes (used = 1) and revokes their associated access tokens.
+func (s *Store) DeleteAllSessions(ctx context.Context) error {
+	// Step 1: Collect all request IDs from used authorization codes.
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT request_data FROM authorization_codes WHERE used = 1`)
+	if err != nil {
+		return fmt.Errorf("delete all sessions: query: %w", err)
+	}
+
+	var requestIDs []string
+	for rows.Next() {
+		var requestData string
+		if err := rows.Scan(&requestData); err != nil {
+			continue
+		}
+		var rj struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal([]byte(requestData), &rj) == nil && rj.ID != "" {
+			requestIDs = append(requestIDs, rj.ID)
+		}
+	}
+	rows.Close()
+
+	// Step 2: Revoke associated tokens (after rows are closed).
+	for _, reqID := range requestIDs {
+		_, _ = s.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO revoked_tokens (jti)
+			 SELECT request_id FROM tokens WHERE request_id = ?`, reqID)
+	}
+
+	// Step 3: Delete all used authorization code sessions.
+	_, err = s.db.ExecContext(ctx, `DELETE FROM authorization_codes WHERE used = 1`)
+	if err != nil {
+		return fmt.Errorf("delete all sessions: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Token management
+// ---------------------------------------------------------------------------
+
+// ListTokens returns all non-revoked access tokens from the tokens table.
+// Tokens whose request_id appears in the revoked_tokens blacklist are excluded
+// so that admin revocation is reflected immediately without deleting the row.
+// Returns a non-nil empty slice when no active tokens exist.
+func (s *Store) ListTokens(ctx context.Context) ([]TokenInfo, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT t.signature, t.request_id, t.client_id, t.subject, t.scopes, t.expires_at, t.created_at
+		 FROM tokens t
+		 WHERE NOT EXISTS (SELECT 1 FROM revoked_tokens r WHERE r.jti = t.request_id)
+		 ORDER BY t.created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list tokens: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]TokenInfo, 0)
+	for rows.Next() {
+		var item TokenInfo
+		if err := rows.Scan(&item.Signature, &item.RequestID, &item.ClientID, &item.Subject, &item.Scopes, &item.ExpiresAt, &item.CreatedAt); err != nil {
+			return nil, fmt.Errorf("list tokens: scan: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list tokens: rows: %w", err)
+	}
+	return items, nil
+}
+
+// DeleteToken revokes an access token by recording its request_id in the
+// revoked_tokens blacklist. The token row is intentionally kept in the tokens
+// table so that fosite's introspection can still load it and then observe the
+// jti blacklist, returning active: false with metadata intact.
+// Returns ErrTokenNotFound if no non-revoked token with that signature exists.
+func (s *Store) DeleteToken(ctx context.Context, signature string) error {
+	// Verify the token exists and is not already revoked, then fetch request_id.
+	row := s.db.QueryRowContext(ctx,
+		`SELECT t.request_id FROM tokens t
+		 WHERE t.signature = ?
+		   AND NOT EXISTS (SELECT 1 FROM revoked_tokens r WHERE r.jti = t.request_id)`,
+		signature)
+
+	var requestID string
+	if err := row.Scan(&requestID); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrTokenNotFound
+		}
+		return fmt.Errorf("delete token %q: fetch request_id: %w", signature, err)
+	}
+
+	// Record the jti in revoked_tokens so introspection returns active: false.
+	// The token row itself is NOT deleted so that fosite can still load metadata.
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO revoked_tokens (jti) VALUES (?)`, requestID); err != nil {
+		return fmt.Errorf("delete token %q: revoke jti: %w", signature, err)
+	}
+
+	return nil
+}
+
+// DeleteAllTokens revokes all non-revoked access tokens by recording their
+// request_ids in the revoked_tokens blacklist. Token rows are intentionally
+// kept in the tokens table so that fosite's introspection can still load them
+// and observe the jti blacklist, returning active: false.
+func (s *Store) DeleteAllTokens(ctx context.Context) error {
+	// Revoke all token JTIs that are not already revoked.
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO revoked_tokens (jti)
+		 SELECT t.request_id FROM tokens t
+		 WHERE NOT EXISTS (SELECT 1 FROM revoked_tokens r WHERE r.jti = t.request_id)`); err != nil {
+		return fmt.Errorf("delete all tokens: revoke jtis: %w", err)
+	}
+
+	return nil
 }
