@@ -76,16 +76,17 @@ jobs:
         run: go build -o bin/my-auth ./cmd/server
 
       - name: Create test config
+        # Generate a fresh bcrypt hash for "admin-password-placeholder-dld686"
+        # and write config.yaml. The genhash tool handles $ characters in the
+        # hash safely via gopkg.in/yaml.v3 marshalling (no shell interpolation).
         run: |
-          printf '%s\n' \
-            'issuer: "https://auth.test.local"' \
-            'port: 8080' \
-            'owner:' \
-            '  username: "admin@test.local"' \
-            '  password_hash: "$2a$12$f9hwtKC5D99r4BOC0UJwM.To6001PN8CS4TEVUEH.IQOGoPWuPZvy"' \
-            'jwt_key_path: "keys/private.pem"' \
-            'admin_token: "admin-bearer-token-placeholder-dld682"' \
-            > config.yaml
+          go run ./cmd/genhash write-config \
+            --username "admin" \
+            --password "admin-password-placeholder-dld686" \
+            --issuer "https://auth.test.local" \
+            --jwt-key-path "keys/private.pem" \
+            --admin-token "admin-bearer-token-placeholder-dld682" \
+            --output config.yaml
 
       - name: Start Go server in background
         # Run the built binary in the background. Playwright's webServer.url
@@ -94,6 +95,17 @@ jobs:
         # SEED_TEST_CLIENT=1 causes main.go to insert the well-known test-client
         # into the database so that E2E authorize tests can use it.
         run: SEED_TEST_CLIENT=1 REFRESH_TOKEN_LIFESPAN=2s ./bin/my-auth &
+
+      - name: Wait for server to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/healthz; then
+              echo "Server is ready"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 1
+          done
 
       - name: Run Playwright e2e tests
         # CI=true causes playwright.config.ts to set reuseExistingServer: false,

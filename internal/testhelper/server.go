@@ -388,6 +388,17 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	// UserInfo endpoint (OIDC Core 1.0 §5.3).
 	r.Get("/oauth2/userinfo", handler.NewUserInfoHandler(oauth2Provider, cfg))
 
+	// Admin SPA 로그인 (세션 쿠키 발급 — Bearer 토큰 불필요)
+	// 반드시 /api/admin 그룹보다 먼저 등록해야 chi 라우터가 올바르게 매칭합니다.
+	r.Post("/api/admin/auth/login", handler.NewAdminSPALoginHandler(cfg, db))
+
+	// Admin 대시보드 API (admin_session 쿠키 인증)
+	r.Route("/api/admin/dashboard", func(r chi.Router) {
+		r.Use(handler.NewAdminSessionMiddleware(cfg, db))
+		r.Get("/stats", handler.NewAdminDashboardStatsHandler(store, db))
+		r.Get("/activity", handler.NewAdminDashboardActivityHandler(db))
+	})
+
 	// Admin Client CRUD endpoints — protected by Bearer token middleware.
 	r.Route("/api/admin", func(r chi.Router) {
 		r.Use(handler.NewAdminAuthMiddleware(cfg.AdminToken))
@@ -406,6 +417,10 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 		r.Delete("/tokens", handler.NewDeleteAllTokensHandler(store))
 		r.Delete("/tokens/{id}", handler.NewDeleteTokenHandler(store))
 	})
+
+	// Admin SPA 정적 파일 서빙
+	r.Handle("/admin/*", handler.NewAdminSPAHandler())
+	r.Handle("/admin", handler.NewAdminSPAHandler())
 
 	return r
 }

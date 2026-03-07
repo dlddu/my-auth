@@ -5,9 +5,11 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * The Go server lifecycle is managed as follows:
  *
- *   Local dev  — `npx playwright test` launches `go run ./cmd/server` via
- *                webServer. If a server is already listening on :8080 it is
- *                reused (reuseExistingServer: true).
+ *   Local dev  — `npx playwright test` launches the dev server via the
+ *                start-dev-server.sh script, which first regenerates config.yaml
+ *                with a fresh bcrypt hash for the E2E admin credentials, then
+ *                starts `go run ./cmd/server`. If a server is already listening
+ *                on :8080 it is reused (reuseExistingServer: true).
  *
  *   CI         — The workflow builds the binary, starts it in the background,
  *                then runs Playwright with PLAYWRIGHT_REUSE_SERVER=1 so that
@@ -56,15 +58,19 @@ export default defineConfig({
   /**
    * Launch the Go development server before running tests.
    *
+   * The start-dev-server.sh script regenerates config.yaml with a fresh bcrypt
+   * hash for the E2E admin credentials (admin / admin-password-placeholder-dld686)
+   * before starting the Go server.
+   *
    * In CI the server binary is pre-built and started in a background step so
    * that reuseExistingServer: true applies and Playwright does not try to
-   * spawn `go run` inside the test runner process.
+   * spawn the script inside the test runner process.
    */
   webServer: {
-    command: "SEED_TEST_CLIENT=1 REFRESH_TOKEN_LIFESPAN=2s go run ./cmd/server",
+    command: "bash scripts/start-dev-server.sh",
     url: "http://localhost:8080/healthz",
     reuseExistingServer,
-    timeout: 30 * 1000,
+    timeout: 60 * 1000,
     stdout: "pipe",
     stderr: "pipe",
   },

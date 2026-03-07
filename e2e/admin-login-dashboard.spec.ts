@@ -49,9 +49,6 @@ test.describe("GET /admin/login — 로그인 페이지 렌더링", () => {
   test(
     "displays the admin login form with id/password fields and the login button",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Act — navigate to the Admin login page.
       await page.goto(ADMIN_LOGIN_PATH);
 
@@ -87,9 +84,6 @@ test.describe("POST /admin/login — 정상 로그인 happy path", () => {
   test(
     "navigates to the admin dashboard after submitting valid credentials",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Arrange — navigate to the Admin login page.
       await page.goto(ADMIN_LOGIN_PATH);
 
@@ -113,9 +107,6 @@ test.describe("POST /admin/login — error: invalid credentials", () => {
   test(
     "displays an error message when incorrect credentials are submitted",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Arrange — navigate to the Admin login page.
       await page.goto(ADMIN_LOGIN_PATH);
 
@@ -148,9 +139,6 @@ test.describe("GET /admin — 대시보드 통계 카드 렌더링", () => {
   test(
     "shows four stat cards: 클라이언트, 활성 세션, 토큰, 24h 인증",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Arrange — log in first to reach the dashboard.
       await page.goto(ADMIN_LOGIN_PATH);
       await page.getByPlaceholder("admin").fill(ADMIN_ID);
@@ -176,9 +164,6 @@ test.describe("GET /admin — 최근 활동 리스트 섹션", () => {
   test(
     "displays the recent activity section on the dashboard",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Arrange — log in first to reach the dashboard.
       await page.goto(ADMIN_LOGIN_PATH);
       await page.getByPlaceholder("admin").fill(ADMIN_ID);

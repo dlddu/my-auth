@@ -3,7 +3,9 @@ port: 8080
 
 owner:
   username: "admin"
-  # bcrypt hash of the initial owner password — replace before production use
+  # bcrypt hash of the initial owner password — replace before production use.
+  # For local E2E tests, run `bash scripts/start-dev-server.sh` to auto-generate
+  # a hash for "admin-password-placeholder-dld686".
   password_hash: "$2a$12$CHANGEME_REPLACE_WITH_REAL_BCRYPT_HASH"
 
 # Path to the RSA private key PEM file used for JWT signing (JWKS endpoint)
