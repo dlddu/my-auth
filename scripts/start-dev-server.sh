@@ -8,8 +8,8 @@ set -euo pipefail
 
 # Generate config.yaml with the E2E admin credentials.
 go run ./cmd/genhash write-config \
-  --username "admin" \
-  --password "admin-password-placeholder-dld686" \
+  --username "admin@test.local" \
+  --password "test-password" \
   --issuer "https://auth.example.com" \
   --jwt-key-path "keys/private.pem" \
   --admin-token "admin-bearer-token-placeholder-dld682" \

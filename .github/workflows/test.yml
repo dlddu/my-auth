@@ -76,13 +76,10 @@ jobs:
         run: go build -o bin/my-auth ./cmd/server
 
       - name: Create test config
-        # Generate a fresh bcrypt hash for "admin-password-placeholder-dld686"
-        # and write config.yaml. The genhash tool handles $ characters in the
-        # hash safely via gopkg.in/yaml.v3 marshalling (no shell interpolation).
         run: |
           go run ./cmd/genhash write-config \
-            --username "admin" \
-            --password "admin-password-placeholder-dld686" \
+            --username "admin@test.local" \
+            --password "test-password" \
             --issuer "https://auth.test.local" \
             --jwt-key-path "keys/private.pem" \
             --admin-token "admin-bearer-token-placeholder-dld682" \

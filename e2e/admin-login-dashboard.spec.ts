@@ -37,8 +37,8 @@ const ADMIN_DASHBOARD_PATH = "/admin";
  * Placeholder admin credentials.
  * Replace with real credentials once the Admin auth mechanism is implemented.
  */
-const ADMIN_ID = "admin";
-const ADMIN_PASSWORD = "admin-password-placeholder-dld686";
+const ADMIN_ID = "admin@test.local";
+const ADMIN_PASSWORD = "test-password";
 
 // ---------------------------------------------------------------------------
 // 1. Admin 로그인 페이지 렌더링 확인

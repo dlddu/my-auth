@@ -59,7 +59,7 @@ export default defineConfig({
    * Launch the Go development server before running tests.
    *
    * The start-dev-server.sh script regenerates config.yaml with a fresh bcrypt
-   * hash for the E2E admin credentials (admin / admin-password-placeholder-dld686)
+   * hash for the E2E credentials (admin@test.local / test-password)
    * before starting the Go server.
    *
    * In CI the server binary is pre-built and started in a background step so
