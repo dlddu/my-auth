@@ -1,5 +1,20 @@
 # ---------------------------------------------------------------------------
-# Stage 1: build
+# Stage 1: build admin SPA
+# ---------------------------------------------------------------------------
+FROM node:22-alpine AS spa-builder
+
+WORKDIR /spa
+
+# Copy dependency manifests first to leverage layer caching.
+COPY admin-spa/package.json admin-spa/package-lock.json ./
+RUN npm ci
+
+# Copy the rest of the SPA source and build.
+COPY admin-spa/ ./
+RUN npx vite build --outDir /spa/dist
+
+# ---------------------------------------------------------------------------
+# Stage 2: build Go binary
 # ---------------------------------------------------------------------------
 FROM golang:1.24-alpine AS builder
 
@@ -9,14 +24,19 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of the source tree and build a statically linked binary.
+# Copy the rest of the source tree.
 COPY . .
+
+# Overwrite the placeholder with actual SPA build output.
+COPY --from=spa-builder /spa/dist/ ./internal/handler/admin/dist/
+
+# Build a statically linked binary.
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w" -trimpath \
     -o /out/my-auth ./cmd/server
 
 # ---------------------------------------------------------------------------
-# Stage 2: minimal runtime image
+# Stage 3: minimal runtime image
 # ---------------------------------------------------------------------------
 FROM scratch
 
