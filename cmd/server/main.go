@@ -225,6 +225,20 @@ func main() {
 	// UserInfo endpoint (OIDC Core 1.0 §5.3).
 	r.Get("/oauth2/userinfo", handler.NewUserInfoHandler(oauth2Provider, cfg))
 
+	// Admin login endpoint — no authentication required (public).
+	r.Post("/api/admin/login", handler.NewAdminLoginHandler(cfg))
+
+	// Admin SPA — serves the embedded frontend for /admin and /admin/*.
+	spaHandler := handler.NewAdminSPAHandler()
+	r.Get("/admin", spaHandler)
+	r.Get("/admin/*", spaHandler)
+
+	// Admin stats endpoint — protected by session middleware.
+	r.Group(func(r chi.Router) {
+		r.Use(handler.NewAdminSessionMiddleware())
+		r.Get("/api/admin/stats", handler.NewAdminStatsHandler(store))
+	})
+
 	// Admin Client CRUD endpoints — protected by Bearer token middleware.
 	r.Route("/api/admin", func(r chi.Router) {
 		r.Use(handler.NewAdminAuthMiddleware(cfg.AdminToken))

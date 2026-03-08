@@ -10,16 +10,6 @@ import { test, expect } from "@playwright/test";
  *   - GET  /admin        — 대시보드 통계 카드 4개 렌더링 확인
  *   - GET  /admin        — 최근 활동 리스트 섹션 표시 확인
  *
- * All tests in this file are skipped (DLD-686) until the Admin SPA is implemented.
- * Remove each `test.skip()` once the feature is in place.
- *
- * Prerequisites (not yet satisfied — hence the skips):
- *   - Admin SPA React application built and served at /admin
- *   - Admin login page rendered at /admin/login
- *   - Admin authentication endpoint registered
- *   - Dashboard statistics API endpoints registered
- *   - Recent activity API endpoint registered
- *
  * Parent issue: DLD-577 (MyAuth — 개인 인프라용 OAuth/OIDC Server)
  */
 
@@ -37,8 +27,8 @@ const ADMIN_DASHBOARD_PATH = "/admin";
  * Placeholder admin credentials.
  * Replace with real credentials once the Admin auth mechanism is implemented.
  */
-const ADMIN_ID = "admin";
-const ADMIN_PASSWORD = "admin-password-placeholder-dld686";
+const ADMIN_ID = "admin@test.local";
+const ADMIN_PASSWORD = "test-password";
 
 // ---------------------------------------------------------------------------
 // 1. Admin 로그인 페이지 렌더링 확인
@@ -49,9 +39,6 @@ test.describe("GET /admin/login — 로그인 페이지 렌더링", () => {
   test(
     "displays the admin login form with id/password fields and the login button",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Act — navigate to the Admin login page.
       await page.goto(ADMIN_LOGIN_PATH);
 
@@ -87,9 +74,6 @@ test.describe("POST /admin/login — 정상 로그인 happy path", () => {
   test(
     "navigates to the admin dashboard after submitting valid credentials",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Arrange — navigate to the Admin login page.
       await page.goto(ADMIN_LOGIN_PATH);
 
@@ -113,9 +97,6 @@ test.describe("POST /admin/login — error: invalid credentials", () => {
   test(
     "displays an error message when incorrect credentials are submitted",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Arrange — navigate to the Admin login page.
       await page.goto(ADMIN_LOGIN_PATH);
 
@@ -148,9 +129,6 @@ test.describe("GET /admin — 대시보드 통계 카드 렌더링", () => {
   test(
     "shows four stat cards: 클라이언트, 활성 세션, 토큰, 24h 인증",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Arrange — log in first to reach the dashboard.
       await page.goto(ADMIN_LOGIN_PATH);
       await page.getByPlaceholder("admin").fill(ADMIN_ID);
@@ -176,9 +154,6 @@ test.describe("GET /admin — 최근 활동 리스트 섹션", () => {
   test(
     "displays the recent activity section on the dashboard",
     async ({ page }) => {
-      // TODO: Activate when DLD-686 is implemented
-      test.skip();
-
       // Arrange — log in first to reach the dashboard.
       await page.goto(ADMIN_LOGIN_PATH);
       await page.getByPlaceholder("admin").fill(ADMIN_ID);

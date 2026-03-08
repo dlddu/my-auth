@@ -808,6 +808,17 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	return items, nil
 }
 
+// CountAuth24h returns the number of completed authorizations in the last 24 hours.
+func (s *Store) CountAuth24h(ctx context.Context) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM authorization_codes WHERE used = 1 AND created_at >= datetime('now', '-24 hours')`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count auth 24h: %w", err)
+	}
+	return count, nil
+}
+
 // DeleteSession removes a completed authorization session by its code (id)
 // from the authorization_codes table (used = 1) and invalidates any
 // associated access tokens by recording their request_ids in revoked_tokens.
