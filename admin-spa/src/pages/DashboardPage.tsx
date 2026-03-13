@@ -19,22 +19,29 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/admin/stats', { credentials: 'same-origin', signal: controller.signal })
-      .then((r) => {
-        if (r.status === 401) {
-          navigate('/admin/login')
-          return null
-        }
-        return r.json()
-      })
-      .then((data) => {
-        if (data) setStats(data)
-        setLoading(false)
-      })
-      .catch((err) => {
-        if (err.name !== 'AbortError') setLoading(false)
-      })
-    return () => controller.abort()
+    // Defer the stats fetch to allow pending navigations (e.g. page.goto in
+    // E2E tests) to complete before starting database-heavy queries.
+    const timer = setTimeout(() => {
+      fetch('/api/admin/stats', { credentials: 'same-origin', signal: controller.signal })
+        .then((r) => {
+          if (r.status === 401) {
+            navigate('/admin/login')
+            return null
+          }
+          return r.json()
+        })
+        .then((data) => {
+          if (data) setStats(data)
+          setLoading(false)
+        })
+        .catch((err) => {
+          if (err.name !== 'AbortError') setLoading(false)
+        })
+    }, 100)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
   }, [navigate])
 
   return (
