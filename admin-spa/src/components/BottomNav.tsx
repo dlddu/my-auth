@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 const navItems = [
   { label: '대시보드', path: '/admin' },
+  { label: '클라이언트', path: '/admin/clients' },
   { label: '로그아웃', path: '/admin/login' },
 ]
 

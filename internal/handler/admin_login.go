@@ -30,9 +30,8 @@ func generateSessionToken() string {
 // NewAdminLoginHandler returns an http.HandlerFunc that handles
 // POST /api/admin/login.
 //
-// It authenticates the owner using cfg.Owner.Username and
-// cfg.Owner.PasswordHash (bcrypt). On success, it issues an admin_session
-// cookie (HttpOnly, SameSite=Strict) and returns 200 JSON { "ok": true }.
+// On success it issues an admin_session cookie (HttpOnly, SameSite=Strict)
+// and returns 200 JSON { "ok": true }.
 // On failure it returns 401 JSON { "error": "invalid credentials" }.
 // On a missing or malformed body it returns 400 JSON { "error": "invalid JSON body" }.
 func NewAdminLoginHandler(cfg *config.Config) http.HandlerFunc {

@@ -396,22 +396,16 @@ func buildRouter(cfg *config.Config, privateKey *rsa.PrivateKey, db *sql.DB) htt
 	r.Get("/admin", spaHandler)
 	r.Get("/admin/*", spaHandler)
 
-	// Admin stats endpoint — protected by session middleware.
-	r.Group(func(r chi.Router) {
-		r.Use(handler.NewAdminSessionMiddleware())
-		r.Get("/api/admin/stats", handler.NewAdminStatsHandler(store))
-	})
-
-	// Admin Client CRUD endpoints — protected by Bearer token middleware.
+	// Admin API endpoints — dual auth: session cookie OR Bearer token.
 	r.Route("/api/admin", func(r chi.Router) {
-		r.Use(handler.NewAdminAuthMiddleware(cfg.AdminToken))
+		r.Use(handler.NewAdminDualAuthMiddleware(cfg.AdminToken))
+		r.Get("/stats", handler.NewAdminStatsHandler(store))
 		r.Post("/clients", handler.NewCreateClientHandler(store))
 		r.Get("/clients", handler.NewListClientsHandler(store))
 		r.Get("/clients/{id}", handler.NewGetClientHandler(store))
 		r.Put("/clients/{id}", handler.NewUpdateClientHandler(store))
 		r.Delete("/clients/{id}", handler.NewDeleteClientHandler(store))
 
-		// Admin Session & Token management endpoints.
 		r.Get("/sessions", handler.NewListSessionsHandler(store))
 		r.Delete("/sessions", handler.NewDeleteAllSessionsHandler(store))
 		r.Delete("/sessions/{id}", handler.NewDeleteSessionHandler(store))

@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom'
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const [id, setId] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState(false)
 
-  async function handleLogin() {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     setError(false)
+    const form = e.currentTarget
+    const id = (form.elements.namedItem('id') as HTMLInputElement).value
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value
     try {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
@@ -18,9 +20,9 @@ export default function LoginPage() {
       })
       if (res.ok) {
         navigate('/admin')
-      } else {
-        setError(true)
+        return
       }
+      setError(true)
     } catch {
       setError(true)
     }
@@ -37,28 +39,27 @@ export default function LoginPage() {
           </div>
         )}
 
-        <input
-          type="text"
-          placeholder="admin"
-          autoComplete="username"
-          value={id}
-          onChange={(e) => setId(e.target.value)}
-          className="block w-full px-4 py-3 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-50 text-base"
-        />
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="block w-full px-4 py-3 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-50 text-base"
-        />
-        <button
-          type="button"
-          onClick={handleLogin}
-          className="block w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-base cursor-pointer"
-        >
-          관리자 로그인
-        </button>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="text"
+            name="id"
+            placeholder="admin"
+            autoComplete="username"
+            className="block w-full px-4 py-3 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-50 text-base"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            className="block w-full px-4 py-3 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-50 text-base"
+          />
+          <button
+            type="submit"
+            className="block w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-base cursor-pointer"
+          >
+            관리자 로그인
+          </button>
+        </form>
       </div>
     </div>
   )
