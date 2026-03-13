@@ -74,6 +74,6 @@ func NewAdminLoginHandler(cfg *config.Config) http.HandlerFunc {
 			SameSite: http.SameSiteStrictMode,
 		})
 
-		writeAdminJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeAdminJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "admin_token": cfg.AdminToken})
 	}
 }

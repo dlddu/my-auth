@@ -67,7 +67,6 @@ test.describe("GET /admin/clients — 클라이언트 목록 카드 렌더링", 
   test(
     "displays registered clients as cards with id and grant_types visible",
     async ({ page }) => {
-      test.skip(true, "DLD-688: ClientsPage 미구현");
 
       // Arrange — log in and navigate to the clients page.
       await loginAndGoToClients(page);
@@ -104,7 +103,6 @@ test.describe("UI — '클라이언트 추가' 버튼 → 풀스크린 시트", 
   test(
     "opens a fullscreen sheet when the '클라이언트 추가' button is clicked",
     async ({ page }) => {
-      test.skip(true, "DLD-688: ClientsPage 미구현");
 
       // Arrange — log in and navigate to the clients page.
       await loginAndGoToClients(page);
@@ -136,7 +134,6 @@ test.describe("UI — 클라이언트 생성 폼 → 목록에 추가됨", () =>
   test(
     "creates a new client via the form and shows the new client card in the list",
     async ({ page }) => {
-      test.skip(true, "DLD-688: ClientsPage 미구현");
 
       // Arrange — log in, navigate to clients page, open the add-client sheet.
       await loginAndGoToClients(page);
@@ -210,7 +207,6 @@ test.describe("UI — Client Secret 최초 표시 + 복사", () => {
   test(
     "shows the client_secret once after creation and allows copying it to the clipboard",
     async ({ page, context }) => {
-      test.skip(true, "DLD-688: ClientsPage 미구현");
 
       // Arrange — grant clipboard-write permission so the copy action works.
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -272,7 +268,6 @@ test.describe("UI — 카드 탭 → 상세 펼침", () => {
   test(
     "expands client detail when the client card is clicked, showing all fields",
     async ({ page }) => {
-      test.skip(true, "DLD-688: ClientsPage 미구현");
 
       // Arrange — log in and navigate to the clients page.
       // The seeded test-client provides a known card to interact with.
@@ -339,7 +334,6 @@ test.describe("UI — 편집 버튼 → 폼 수정 → 변경사항 반영", () 
   test(
     "updates the client when fields are edited through the edit form and saves",
     async ({ page }) => {
-      test.skip(true, "DLD-688: ClientsPage 미구현");
 
       // Arrange — log in and navigate to the clients page.
       await loginAndGoToClients(page);
@@ -400,7 +394,6 @@ test.describe("UI — 삭제 버튼 → 확인 → 목록에서 제거됨", () =
   test(
     "removes the client from the list after delete is confirmed",
     async ({ page, request }) => {
-      test.skip(true, "DLD-688: ClientsPage 미구현");
 
       // Arrange — create a dedicated client via the Admin API so we do not
       // delete the shared seeded test-client and break other tests.
