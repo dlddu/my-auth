@@ -472,12 +472,11 @@ function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogProps) {
 
 // ClientSecretDisplay component
 interface ClientSecretDisplayProps {
-  clientId: string
   secret: string
   onClose: () => void
 }
 
-function ClientSecretDisplay({ clientId, secret, onClose }: ClientSecretDisplayProps) {
+function ClientSecretDisplay({ secret, onClose }: ClientSecretDisplayProps) {
   const [copied, setCopied] = useState(false)
 
   async function handleCopy() {
@@ -504,7 +503,6 @@ function ClientSecretDisplay({ clientId, secret, onClose }: ClientSecretDisplayP
         <p className="text-gray-400 text-xs mb-4">
           이 시크릿은 한 번만 표시됩니다. 안전한 곳에 저장하세요.
         </p>
-        <div className="text-xs text-gray-400 mb-1">{clientId}</div>
         <div
           data-testid="secret-value"
           className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-xs text-green-300 break-all mb-4"
@@ -748,7 +746,7 @@ export default function ClientsPage() {
                 expanded={expandedId === client.id}
                 onToggle={() => setExpandedId(expandedId === client.id ? null : client.id)}
                 onEdit={() => setEditClient(client)}
-                onDelete={() => setDeleteClient(client)}
+                onDelete={() => { setDeleteClient(client); setExpandedId(null); }}
               />
             ))}
           </div>
@@ -760,7 +758,6 @@ export default function ClientsPage() {
       {/* Client Secret Display (after creation) */}
       {secretInfo && (
         <ClientSecretDisplay
-          clientId={secretInfo.id}
           secret={secretInfo.secret}
           onClose={() => setSecretInfo(null)}
         />
