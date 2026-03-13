@@ -1,15 +1,30 @@
 import { useState } from 'react'
 
-function hasLoginErrorCookie(): boolean {
-  if (document.cookie.includes('login_error=1')) {
-    document.cookie = 'login_error=; path=/; max-age=0'
-    return true
-  }
-  return false
-}
-
 export default function LoginPage() {
-  const [error] = useState(hasLoginErrorCookie)
+  const [error, setError] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setError(false)
+    const form = e.currentTarget
+    const id = (form.elements.namedItem('id') as HTMLInputElement).value
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ id, password }),
+      })
+      if (res.ok) {
+        window.location.href = '/admin'
+        return
+      }
+      setError(true)
+    } catch {
+      setError(true)
+    }
+  }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4">
@@ -22,7 +37,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form method="POST" action="/api/admin/login">
+        <form onSubmit={handleSubmit}>
           <input
             type="text"
             name="id"
