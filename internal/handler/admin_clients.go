@@ -114,6 +114,32 @@ func NewAdminAuthMiddleware(adminToken string) func(http.Handler) http.Handler {
 	}
 }
 
+// NewAdminDualAuthMiddleware returns a middleware that accepts EITHER a valid
+// admin_session cookie OR a valid Bearer token. This enables both browser-based
+// (SPA session cookie) and programmatic (API Bearer token) access.
+func NewAdminDualAuthMiddleware(adminToken string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Try session cookie first.
+			if cookie, err := r.Cookie("admin_session"); err == nil && adminSessionStore.Has(cookie.Value) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Try Bearer token.
+			authHeader := r.Header.Get("Authorization")
+			const prefix = "Bearer "
+			if strings.HasPrefix(authHeader, prefix) {
+				token := strings.TrimPrefix(authHeader, prefix)
+				if token != "" && token == adminToken {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			writeAdminError(w, http.StatusUnauthorized, "unauthorized")
+		})
+	}
+}
+
 // generateClientID generates a cryptographically random 32-character hex string
 // suitable for use as a client_id.
 func generateClientID() (string, error) {

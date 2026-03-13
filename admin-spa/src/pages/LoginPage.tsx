@@ -17,10 +17,6 @@ export default function LoginPage() {
         body: JSON.stringify({ id, password }),
       })
       if (res.ok) {
-        const data = await res.json()
-        if (data.admin_token) {
-          sessionStorage.setItem('admin_token', data.admin_token)
-        }
         navigate('/admin')
       } else {
         setError(true)

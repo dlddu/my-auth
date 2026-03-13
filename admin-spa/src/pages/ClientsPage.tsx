@@ -543,15 +543,10 @@ export default function ClientsPage() {
   const [deleteClient, setDeleteClient] = useState<Client | null>(null)
   const [secretInfo, setSecretInfo] = useState<{ id: string; secret: string } | null>(null)
 
-  const token = sessionStorage.getItem('admin_token') || ''
-
   const fetchClients = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/clients', {
         credentials: 'same-origin',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       })
       if (res.status === 401) {
         navigate('/admin/login')
@@ -569,12 +564,11 @@ export default function ClientsPage() {
       setError('네트워크 오류가 발생했습니다.')
       setLoading(false)
     }
-  }, [token, navigate])
+  }, [navigate])
 
   useEffect(() => {
     fetch('/api/admin/clients', {
       credentials: 'same-origin',
-      headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
         if (res.status === 401) {
@@ -598,7 +592,7 @@ export default function ClientsPage() {
         setError('네트워크 오류가 발생했습니다.')
         setLoading(false)
       })
-  }, [token, navigate])
+  }, [navigate])
 
   async function handleCreate(input: CreateClientInput) {
     try {
@@ -607,7 +601,6 @@ export default function ClientsPage() {
         credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(input),
       })
@@ -639,7 +632,6 @@ export default function ClientsPage() {
         credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(input),
       })
@@ -665,9 +657,6 @@ export default function ClientsPage() {
       const res = await fetch(`/api/admin/clients/${deleteClient.id}`, {
         method: 'DELETE',
         credentials: 'same-origin',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       })
       if (res.status === 401) {
         navigate('/admin/login')
