@@ -66,16 +66,19 @@ function ClientCard({ client, expanded, onToggle, onEdit, onDelete }: ClientCard
         className="w-full px-4 py-3 flex items-center justify-between text-left"
         onClick={onToggle}
         aria-expanded={expanded}
+        aria-label="상세 보기"
       >
-        <span className="font-mono text-sm text-gray-100 truncate">{client.id}</span>
-        <span className="ml-2 text-gray-400 text-xs">{expanded ? '▲' : '▼'}</span>
+        <div className="min-w-0 flex-1">
+          <span className="font-mono text-sm text-gray-100 truncate block">{client.id}</span>
+          <span className="text-xs text-gray-400 truncate block">{client.grant_types.join(', ')}</span>
+        </div>
+        <span className="ml-2 text-gray-400 text-xs flex-shrink-0">{expanded ? '▲' : '▼'}</span>
       </button>
 
       {expanded && (
         <div
           data-testid="client-detail"
           className="client-detail px-4 pb-4 border-t border-gray-800"
-          aria-expanded="true"
         >
           <div className="mt-3 space-y-2 text-sm">
             <div>
@@ -701,13 +704,15 @@ export default function ClientsPage() {
 
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-lg font-bold">클라이언트</h1>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm"
-            aria-label="클라이언트 추가"
-          >
-            클라이언트 추가
-          </button>
+          {!showCreate && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm"
+              aria-label="클라이언트 추가"
+            >
+              클라이언트 추가
+            </button>
+          )}
         </div>
 
         {/* Loading state */}
@@ -723,13 +728,15 @@ export default function ClientsPage() {
         {!loading && !error && clients.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <p className="text-gray-400 mb-4">등록된 클라이언트가 없습니다</p>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm"
-              aria-label="클라이언트 추가"
-            >
-              클라이언트 추가
-            </button>
+            {!showCreate && (
+              <button
+                onClick={() => setShowCreate(true)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm"
+                aria-label="클라이언트 추가"
+              >
+                클라이언트 추가
+              </button>
+            )}
           </div>
         )}
 
