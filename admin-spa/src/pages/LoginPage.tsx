@@ -1,30 +1,15 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+
+function hasLoginErrorCookie(): boolean {
+  if (document.cookie.includes('login_error=1')) {
+    document.cookie = 'login_error=; path=/; max-age=0'
+    return true
+  }
+  return false
+}
 
 export default function LoginPage() {
-  const navigate = useNavigate()
-  const [id, setId] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState(false)
-
-  async function handleLogin() {
-    setError(false)
-    try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ id, password }),
-      })
-      if (res.ok) {
-        navigate('/admin')
-      } else {
-        setError(true)
-      }
-    } catch {
-      setError(true)
-    }
-  }
+  const [error] = useState(hasLoginErrorCookie)
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4">
@@ -37,28 +22,27 @@ export default function LoginPage() {
           </div>
         )}
 
-        <input
-          type="text"
-          placeholder="admin"
-          autoComplete="username"
-          value={id}
-          onChange={(e) => setId(e.target.value)}
-          className="block w-full px-4 py-3 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-50 text-base"
-        />
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="block w-full px-4 py-3 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-50 text-base"
-        />
-        <button
-          type="button"
-          onClick={handleLogin}
-          className="block w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-base cursor-pointer"
-        >
-          관리자 로그인
-        </button>
+        <form method="POST" action="/api/admin/login">
+          <input
+            type="text"
+            name="id"
+            placeholder="admin"
+            autoComplete="username"
+            className="block w-full px-4 py-3 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-50 text-base"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            className="block w-full px-4 py-3 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-50 text-base"
+          />
+          <button
+            type="submit"
+            className="block w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-base cursor-pointer"
+          >
+            관리자 로그인
+          </button>
+        </form>
       </div>
     </div>
   )

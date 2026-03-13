@@ -29,27 +29,31 @@ type adminStatsResponse struct {
 // GET /api/admin/stats.
 //
 // It returns counts for clients, sessions, tokens, and auth_24h.
+// Uses a detached context for database queries to prevent client
+// disconnections from cancelling in-flight SQLite operations.
 func NewAdminStatsHandler(store AdminStatsStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		clients, err := store.ListClients(r.Context())
+		ctx := context.WithoutCancel(r.Context())
+
+		clients, err := store.ListClients(ctx)
 		if err != nil {
 			writeAdminError(w, http.StatusInternalServerError, "failed to list clients")
 			return
 		}
 
-		sessions, err := store.ListSessions(r.Context())
+		sessions, err := store.ListSessions(ctx)
 		if err != nil {
 			writeAdminError(w, http.StatusInternalServerError, "failed to list sessions")
 			return
 		}
 
-		tokens, err := store.ListTokens(r.Context())
+		tokens, err := store.ListTokens(ctx)
 		if err != nil {
 			writeAdminError(w, http.StatusInternalServerError, "failed to list tokens")
 			return
 		}
 
-		auth24h, err := store.CountAuth24h(r.Context())
+		auth24h, err := store.CountAuth24h(ctx)
 		if err != nil {
 			writeAdminError(w, http.StatusInternalServerError, "failed to count auth 24h")
 			return

@@ -18,7 +18,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/admin/stats', { credentials: 'same-origin' })
+    const controller = new AbortController()
+    fetch('/api/admin/stats', { credentials: 'same-origin', signal: controller.signal })
       .then((r) => {
         if (r.status === 401) {
           navigate('/admin/login')
@@ -30,7 +31,10 @@ export default function DashboardPage() {
         if (data) setStats(data)
         setLoading(false)
       })
-      .catch(() => setLoading(false))
+      .catch((err) => {
+        if (err.name !== 'AbortError') setLoading(false)
+      })
+    return () => controller.abort()
   }, [navigate])
 
   return (
