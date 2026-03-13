@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import TopHeader from '../components/TopHeader'
 import BottomNav from '../components/BottomNav'
@@ -545,7 +545,7 @@ export default function ClientsPage() {
 
   const token = sessionStorage.getItem('admin_token') || ''
 
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/clients', {
         credentials: 'same-origin',
@@ -569,11 +569,11 @@ export default function ClientsPage() {
       setError('네트워크 오류가 발생했습니다.')
       setLoading(false)
     }
-  }
+  }, [token, navigate])
 
   useEffect(() => {
     fetchClients()
-  }, [])
+  }, [fetchClients])
 
   async function handleCreate(input: CreateClientInput) {
     try {
