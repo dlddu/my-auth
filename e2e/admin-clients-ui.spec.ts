@@ -53,7 +53,13 @@ async function loginAndGoToClients(
   await page.goto(ADMIN_LOGIN_PATH);
   await page.getByPlaceholder("admin").fill(ADMIN_ID);
   await page.locator('input[type="password"]').fill(ADMIN_PASSWORD);
-  await page.getByRole("button", { name: /관리자 로그인/i }).click();
+  await Promise.all([
+    page.waitForResponse(
+      (resp) =>
+        resp.url().includes("/api/admin/login") && resp.status() === 200
+    ),
+    page.getByRole("button", { name: /관리자 로그인/i }).click(),
+  ]);
   await page.goto(ADMIN_CLIENTS_PATH);
   await expect(page).toHaveURL(ADMIN_CLIENTS_PATH);
 }

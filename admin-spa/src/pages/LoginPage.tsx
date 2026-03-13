@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 export default function LoginPage() {
+  const navigate = useNavigate()
   const [error, setError] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -17,7 +19,7 @@ export default function LoginPage() {
         body: JSON.stringify({ id, password }),
       })
       if (res.ok) {
-        window.location.href = '/admin'
+        navigate('/admin')
         return
       }
       setError(true)
