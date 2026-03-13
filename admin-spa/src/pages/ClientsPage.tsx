@@ -65,7 +65,6 @@ function ClientCard({ client, expanded, onToggle, onEdit, onDelete }: ClientCard
       <button
         className="w-full px-4 py-3 flex items-center justify-between text-left"
         onClick={onToggle}
-        aria-expanded={expanded}
         aria-label="상세 보기"
       >
         <div className="min-w-0 flex-1">
@@ -448,7 +447,7 @@ function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogProps) {
       aria-modal="true"
       aria-label="삭제 확인"
     >
-      <div className="confirm-dialog alert-dialog bg-gray-900 rounded-xl p-6 mx-4 w-full max-w-sm border border-gray-800">
+      <div className="bg-gray-900 rounded-xl p-6 mx-4 w-full max-w-sm border border-gray-800">
         <p className="text-gray-100 text-sm mb-6">{message}</p>
         <div className="flex gap-3">
           <button
@@ -494,7 +493,6 @@ function ClientSecretDisplay({ clientId, secret, onClose }: ClientSecretDisplayP
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      role="dialog"
       aria-modal="true"
       aria-label="클라이언트 시크릿"
     >
@@ -508,7 +506,7 @@ function ClientSecretDisplay({ clientId, secret, onClose }: ClientSecretDisplayP
         </p>
         <div className="text-xs text-gray-400 mb-1">{clientId}</div>
         <div
-          data-testid="client-secret"
+          data-testid="secret-value"
           className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-xs text-green-300 break-all mb-4"
         >
           {secret}
