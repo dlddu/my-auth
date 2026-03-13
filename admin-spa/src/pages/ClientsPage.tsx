@@ -572,8 +572,33 @@ export default function ClientsPage() {
   }, [token, navigate])
 
   useEffect(() => {
-    fetchClients()
-  }, [fetchClients])
+    fetch('/api/admin/clients', {
+      credentials: 'same-origin',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (res.status === 401) {
+          navigate('/admin/login')
+          return null
+        }
+        if (!res.ok) {
+          setError('클라이언트 목록을 불러오는데 실패했습니다.')
+          setLoading(false)
+          return null
+        }
+        return res.json()
+      })
+      .then((data) => {
+        if (data) {
+          setClients(Array.isArray(data) ? data : [])
+          setLoading(false)
+        }
+      })
+      .catch(() => {
+        setError('네트워크 오류가 발생했습니다.')
+        setLoading(false)
+      })
+  }, [token, navigate])
 
   async function handleCreate(input: CreateClientInput) {
     try {
